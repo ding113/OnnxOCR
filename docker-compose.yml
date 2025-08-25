@@ -6,17 +6,24 @@ services:
     container_name: onnxocr-service
     ports:
       - "5005:5005"
-    environment:
-      - PYTHONUNBUFFERED=1
     restart: unless-stopped
     volumes:
-      # 可选: 挂载数据目录用于处理大量图片
-      # - ./data:/app/data
-      # 可选: 挂载日志目录
-      # - ./logs:/app/logs
+      # === 核心数据处理目录 - 读写挂载，持久化用户数据 ===
+      - "./data/uploads:/app/uploads"                          # WebUI文件上传存储
+      - "./data/results:/app/results"                          # WebUI处理结果 + zip下载
+      - "./data/inference_results:/app/onnxocr/inference_results"  # OCR可视化图片输出
+      - "./data/output:/app/onnxocr/output"                    # 图片裁剪结果保存
+      - "./data/logs:/app/onnxocr/log_output"                  # 应用运行日志
+      - "./custom/models:/app/onnxocr/models:ro"             # 自定义OCR模型文件
+      - "./custom/fonts:/app/onnxocr/fonts:ro"               # 自定义字体文件
+      - "./custom/static:/app/static:ro"                     # 自定义Web静态资源
+      - "./custom/templates:/app/templates:ro"               # 自定义Web模板
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+    tmpfs:
+      - /tmp                   # 临时文件使用内存文件系统，提高性能
