@@ -14,10 +14,6 @@ services:
       - "./data/inference_results:/app/onnxocr/inference_results"  # OCR可视化图片输出
       - "./data/output:/app/onnxocr/output"                    # 图片裁剪结果保存
       - "./data/logs:/app/onnxocr/log_output"                  # 应用运行日志
-      - "./custom/models:/app/onnxocr/models:ro"             # 自定义OCR模型文件
-      - "./custom/fonts:/app/onnxocr/fonts:ro"               # 自定义字体文件
-      - "./custom/static:/app/static:ro"                     # 自定义Web静态资源
-      - "./custom/templates:/app/templates:ro"               # 自定义Web模板
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
       interval: 30s
