@@ -1,0 +1,22 @@
+services:
+  onnxocr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: onnxocr-service
+    ports:
+      - "5005:5005"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    volumes:
+      # 可选: 挂载数据目录用于处理大量图片
+      # - ./data:/app/data
+      # 可选: 挂载日志目录
+      # - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

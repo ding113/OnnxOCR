@@ -7,11 +7,20 @@ WORKDIR /app
 # 复制 requirements.txt 到工作目录
 COPY requirements.txt .
 
-# 安装依赖
+# 更换为清华大学镜像源 (避免新旧源同时使用)
+RUN sed -i 's@deb.debian.org@mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/debian.sources
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libgl1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Python 依赖
 RUN pip install --no-cache-dir -r requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-RUN apt-get update
-RUN apt-get install ffmpeg libsm6 libxext6  -y
-RUN apt-get install libgl1
 
 # 复制项目目录中的所有文件到镜像中
 COPY . .
