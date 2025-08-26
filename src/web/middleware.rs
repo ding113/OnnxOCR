@@ -1,4 +1,5 @@
 use axum::{
+    body::Body,
     http::{Request, StatusCode},
     middleware::Next,
     response::Response,
@@ -6,10 +7,10 @@ use axum::{
 use std::time::Instant;
 
 /// 请求日志中间件
-pub async fn request_logging<B>(
-    req: Request<B>,
-    next: Next<B>,
-) -> Result<Response, StatusCode> {
+pub async fn request_logging(
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response<Body>, StatusCode> {
     let method = req.method().clone();
     let uri = req.uri().clone();
     let user_agent = req
@@ -55,11 +56,11 @@ impl RateLimiter {
         Self {}
     }
 
-    pub async fn check<B>(
+    pub async fn check(
         &self,
-        req: Request<B>,
-        next: Next<B>,
-    ) -> Result<Response, StatusCode> {
+        req: Request<Body>,
+        next: Next,
+    ) -> Result<Response<Body>, StatusCode> {
         // TODO: 实现真正的速率限制逻辑
         // 这里暂时简单地通过所有请求
         Ok(next.run(req).await)
@@ -67,10 +68,10 @@ impl RateLimiter {
 }
 
 /// 安全头中间件
-pub async fn security_headers<B>(
-    req: Request<B>,
-    next: Next<B>,
-) -> Result<Response, StatusCode> {
+pub async fn security_headers(
+    req: Request<Body>,
+    next: Next,
+) -> Result<Response<Body>, StatusCode> {
     let mut response = next.run(req).await;
     
     // 添加安全相关的HTTP头
@@ -88,15 +89,9 @@ pub async fn security_headers<B>(
 }
 
 /// 错误处理中间件
-pub async fn error_handler<B>(
-    req: Request<B>,
-    next: Next<B>,
-) -> Result<Response, StatusCode> {
-    match next.run(req).await {
-        Ok(response) => Ok(response),
-        Err(err) => {
-            tracing::error!("Request failed with error: {:?}", err);
-            Err(err)
-        }
-    }
+pub async fn error_handler(
+    req: Request<Body>,
+    next: Next,
+) -> Response<Body> {
+    next.run(req).await
 }

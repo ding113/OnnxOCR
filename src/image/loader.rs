@@ -2,9 +2,8 @@ use crate::utils::error::OcrError;
 use crate::Result;
 use axum::body::Bytes;
 use base64::Engine;
-use image::{DynamicImage, ImageFormat};
+use image::{DynamicImage, GenericImageView, ImageFormat};
 use ndarray::Array3;
-use std::io::Cursor;
 use tokio::io::AsyncRead;
 
 pub struct ImageLoader;

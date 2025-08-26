@@ -178,7 +178,7 @@ impl ResultFormatter {
     pub fn filter_overlapping_boxes(mut results: Vec<OcrTextResult>) -> Vec<OcrTextResult> {
         results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
         
-        let mut filtered = Vec::new();
+        let mut filtered: Vec<OcrTextResult> = Vec::new();
         
         for result in results {
             let mut is_overlapping = false;

@@ -91,9 +91,9 @@ impl ImagePreprocessor {
         let mut gray = Array3::<f32>::zeros((height, width, 1));
         for h in 0..height {
             for w in 0..width {
-                let gray_val = (image[[h, w, 0]] * 0.299 + 
+                let gray_val = image[[h, w, 0]] * 0.299 + 
                               image[[h, w, 1]] * 0.587 + 
-                              image[[h, w, 2]] * 0.114);
+                              image[[h, w, 2]] * 0.114;
                 gray[[h, w, 0]] = gray_val;
             }
         }
@@ -172,7 +172,7 @@ impl ImagePreprocessor {
 
     /// 图像旋转（基于角度分类结果）
     pub fn rotate_image(image: Array3<f32>, angle_degrees: f32) -> Result<Array3<f32>> {
-        if (angle_degrees.abs() < 0.1) {
+        if angle_degrees.abs() < 0.1 {
             return Ok(image); // 不需要旋转
         }
         

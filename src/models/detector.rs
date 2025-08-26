@@ -1,7 +1,11 @@
 use crate::utils::error::OcrError;
 use crate::{Config, Result};
-use ndarray::{Array3, Array4, Axis, s};
-use ort::{GraphOptimizationLevel, Session};
+use ndarray::{Array3, Axis, s};
+use ort::{
+    session::{builder::GraphOptimizationLevel, Session},
+    value::Tensor,
+    inputs,
+};
 use std::sync::Arc;
 
 pub struct Detector {
@@ -49,7 +53,8 @@ impl Detector {
         let input_tensor = resized_img.insert_axis(Axis(0)); // 添加batch维度
         
         // 推理
-        let outputs = self.session.run(ort::inputs!["x" => input_tensor.view()]?)?;
+        let input_tensor = Tensor::from_array_view(input_tensor.view())?;
+        let outputs = self.session.run(inputs!["x" => input_tensor]?)?;
         let prediction = outputs["sigmoid_0.tmp_0"]
             .try_extract_array::<f32>()?;
 

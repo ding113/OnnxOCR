@@ -10,7 +10,7 @@ license = "MIT"
 # Web框架与文件上传
 axum = { version = "0.7", features = ["multipart", "macros"] }
 tower = { version = "0.4", features = ["full"] }
-tower-http = { version = "0.5", features = ["fs", "cors", "compression-gzip", "limit", "timeout"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "compression-gzip", "limit", "timeout", "trace"] }
 
 # ONNX推理引擎  
 ort = { version = "=2.0.0-rc.10", features = ["ndarray"] }

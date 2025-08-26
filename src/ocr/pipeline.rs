@@ -2,7 +2,6 @@ use crate::{
     image::{ImageLoader, ImagePreprocessor, ResultFormatter},
     models::{get_classifier, get_detector, get_recognizer},
     ocr::{OcrOptions, OcrResult, OcrStats, OcrStatus, OcrStage},
-    utils::error::OcrError,
     Result,
 };
 use ndarray::Array3;
@@ -260,7 +259,7 @@ impl OcrPipeline {
             }
 
             // 批处理识别
-            let batch_results = recognizer.recognize(batch.to_vec()).await?;
+            let batch_results = recognizer.recognize(batch.to_vec())?;
             all_results.extend(batch_results);
         }
 

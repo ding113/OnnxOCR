@@ -1,8 +1,11 @@
 use crate::utils::error::OcrError;
 use crate::{Config, Result};
 use ndarray::Array3;
-use ort::{GraphOptimizationLevel, Session};
-use std::collections::HashMap;
+use ort::{
+    session::{builder::GraphOptimizationLevel, Session},
+    value::Tensor,
+    inputs,
+};
 use std::fs;
 use std::sync::Arc;
 
@@ -84,7 +87,8 @@ impl Recognizer {
         let input_tensor = processed_image.insert_axis(ndarray::Axis(0));
         
         // 推理
-        let outputs = self.session.run(ort::inputs!["x" => input_tensor.view()]?)?;
+        let input_tensor = Tensor::from_array_view(input_tensor.view())?;
+        let outputs = self.session.run(inputs!["x" => input_tensor]?)?;
         let predictions = outputs["softmax_2.tmp_0"]
             .try_extract_array::<f32>()?;
 

@@ -24,7 +24,7 @@ where
             .map_err(|err| ValidationError::JsonParse(err.to_string()))?;
 
         value.validate()
-            .map_err(ValidationError::Validation)?;
+            .map_err(|e| ValidationError::Validation(e.to_string()))?;
 
         Ok(ValidatedJson(value))
     }

@@ -5,7 +5,6 @@ use crate::{
 };
 use axum::{
     extract::{Multipart, State},
-    http::StatusCode,
     response::Json,
 };
 use serde::{Deserialize, Serialize};
@@ -81,7 +80,7 @@ impl<T> ApiResponse<T> {
 
 /// JSON base64上传处理器
 pub async fn ocr_json_handler(
-    State(config): State<Config>,
+    State(_config): State<Config>,
     Json(request): Json<OcrJsonRequest>,
 ) -> Result<Json<ApiResponse<crate::ocr::OcrResult>>> {
     let start_time = Instant::now();
@@ -107,7 +106,7 @@ pub async fn ocr_json_handler(
     };
 
     // 创建状态通道（可选的进度监控）
-    let (status_tx, mut status_rx) = mpsc::unbounded_channel();
+    let (status_tx, mut status_rx) = mpsc::unbounded_channel::<OcrStatus>();
     
     // 启动后台任务监控进度（开发模式）
     if config.dev_mode {
@@ -145,7 +144,7 @@ pub async fn ocr_json_handler(
 
 /// Multipart文件上传处理器
 pub async fn ocr_upload_handler(
-    State(config): State<Config>,
+    State(_config): State<Config>,
     mut multipart: Multipart,
 ) -> Result<Json<ApiResponse<crate::ocr::OcrResult>>> {
     let start_time = Instant::now();
@@ -154,7 +153,7 @@ pub async fn ocr_upload_handler(
     tracing::info!("Processing multipart OCR request: request_id={}", request_id);
 
     let mut image_data: Option<axum::body::Bytes> = None;
-    let mut options = OcrOptions::default();
+    let options = OcrOptions::default();
 
     // 解析multipart数据
     while let Some(field) = multipart.next_field().await.map_err(|e| {
@@ -219,7 +218,7 @@ pub async fn ocr_upload_handler(
     })?;
 
     // 创建状态通道（可选的进度监控）
-    let (status_tx, mut status_rx) = mpsc::unbounded_channel();
+    let (status_tx, mut status_rx) = mpsc::unbounded_channel::<OcrStatus>();
     
     // 启动后台任务监控进度（开发模式）
     if config.dev_mode {
@@ -257,7 +256,7 @@ pub async fn ocr_upload_handler(
 
 /// 批处理上传处理器（支持多个文件）
 pub async fn ocr_batch_handler(
-    State(config): State<Config>,
+    State(_config): State<Config>,
     mut multipart: Multipart,
 ) -> Result<Json<ApiResponse<Vec<crate::ocr::OcrResult>>>> {
     let start_time = Instant::now();
@@ -266,7 +265,7 @@ pub async fn ocr_batch_handler(
     tracing::info!("Processing batch OCR request: request_id={}", request_id);
 
     let mut files = Vec::new();
-    let mut options = OcrOptions::default();
+    let options = OcrOptions::default();
 
     // 解析multipart数据
     while let Some(field) = multipart.next_field().await.map_err(|e| {

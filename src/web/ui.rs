@@ -1,6 +1,6 @@
 use axum::{
     response::{Html, IntoResponse},
-    http::{StatusCode, HeaderMap, HeaderValue},
+    http::{HeaderMap, HeaderValue},
 };
 
 /// 首页处理器
@@ -437,13 +437,13 @@ pub async fn style_handler() -> impl IntoResponse {
 }
 
 /// 在实际部署中，这个函数会返回嵌入的HTML内容
-pub fn get_embedded_html() -> &'static str {
+pub fn get_embedded_html() -> String {
     // 在编译时嵌入HTML文件，如果文件不存在则返回生成的HTML
     match std::include_str!("../../templates/index.html") {
-        html if html.len() > 100 => html, // 简单检查文件是否有效
+        html if html.len() > 100 => html.to_string(), // 简单检查文件是否有效
         _ => {
             // 如果文件不存在或无效，使用内联HTML
-            &generate_index_html()
+            generate_index_html()
         }
     }
 }

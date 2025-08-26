@@ -10,9 +10,11 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use crate::utils::error::OcrError;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
@@ -45,8 +47,13 @@ pub async fn serve(config: Config) -> Result<()> {
     tracing::info!("  GET  /api/info  - Service information");
 
     // 启动服务器
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    let listener = TcpListener::bind(&addr)
+        .await
+        .map_err(|e| crate::utils::error::OcrError::Internal(
+            format!("Failed to bind to address {}: {}", addr, e)
+        ))?;
+        
+    axum::serve(listener, app)
         .await
         .map_err(|e| crate::utils::error::OcrError::Internal(
             format!("Server failed to start: {}", e)
@@ -84,19 +91,19 @@ async fn create_app(config: Config) -> Result<Router> {
 }
 
 /// 健康检查端点
-async fn health_handler() -> Result<Json<serde_json::Value>, StatusCode> {
+async fn health_handler() -> Result<Json<serde_json::Value>> {
     match crate::models::health_check() {
         Ok(_) => Ok(Json(json!({
             "status": "healthy",
             "timestamp": chrono::Utc::now().to_rfc3339(),
             "version": env!("CARGO_PKG_VERSION")
         }))),
-        Err(_) => Err(StatusCode::SERVICE_UNAVAILABLE)
+        Err(e) => Err(e)
     }
 }
 
 /// 服务信息端点
-async fn info_handler() -> Result<Json<serde_json::Value>, StatusCode> {
+async fn info_handler() -> Result<Json<serde_json::Value>> {
     match crate::models::get_model_stats() {
         Ok(stats) => Ok(Json(json!({
             "service": "ONNX OCR Service",
@@ -110,6 +117,6 @@ async fn info_handler() -> Result<Json<serde_json::Value>, StatusCode> {
                 "batch_processing": true
             }
         }))),
-        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR)
+        Err(e) => Err(e)
     }
 }
