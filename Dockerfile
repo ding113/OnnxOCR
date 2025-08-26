@@ -1,5 +1,5 @@
 # 使用国内镜像源的Rust基础镜像
-FROM rust:1.75-slim-bookworm as builder
+FROM rust:slim as builder
 
 # 设置工作目录
 WORKDIR /app
