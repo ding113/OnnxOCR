@@ -1,7 +1,6 @@
 你正在开发一个onnxOCR 的 Rust服务端。这个服务端应该能够被使用Docker部署，暴露5005端口，在多路多核CPU的场景下，尽量榨干本地算力，实现CPU推理最大化。同时提供简单的Web UI和标准API接口（无鉴权），提供高性能、高安全、高可用的OCR服务端组件。
 
-作为参考，一个示例的onnxocr模型文件位于resources\onnxocr\models\ppocrv5，你可以随时
-复制出来进行测试。在resources\onnxocr里有一个用Python写的类似项目，但是其中对于并发、性能、安全、接口、前端、部署等部分的实现极为粗糙。因此你不应该照抄它的实现。只需要借鉴其中关于模型适配的经验。你务必全程ultrathink。
+作为参考，onnxocr模型文件现在位于models\ppocrv5目录，已经从resources目录复制出来供项目使用。在resources\onnxocr里有一个用Python写的类似项目，但是其中对于并发、性能、安全、接口、前端、部署等部分的实现极为粗糙。因此你不应该照抄它的实现。只需要借鉴其中关于模型适配的经验。你务必全程ultrathink。
 
 常见的OCR接口包括：
 

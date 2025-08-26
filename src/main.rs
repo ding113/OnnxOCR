@@ -20,7 +20,7 @@ struct Args {
     log_level: String,
 
     /// Model directory path
-    #[arg(long, default_value = "resources/onnxocr/models")]
+    #[arg(long, default_value = "models")]
     models_dir: String,
 
     /// Enable development mode

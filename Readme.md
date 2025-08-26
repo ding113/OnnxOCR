@@ -16,7 +16,7 @@
 ### 前置要求
 
 - Docker & Docker Compose
-- 模型文件位于 `resources/onnxocr/models/` 目录
+- 模型文件位于 `models/` 目录
 
 
 

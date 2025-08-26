@@ -51,6 +51,7 @@ RUN mkdir -p /app/models /app/logs /app/results /app/uploads
 # 复制编译好的二进制文件
 COPY --from=builder /app/target/release/onnx-ocr /usr/local/bin/onnx-ocr
 COPY templates/ ./templates/
+COPY models/ ./models/
 
 # 设置权限
 RUN chmod +x /usr/local/bin/onnx-ocr
