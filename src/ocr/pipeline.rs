@@ -92,7 +92,7 @@ impl OcrPipeline {
 
         let detector = get_detector()?;
         let detection_start = Instant::now();
-        let text_boxes = detector.detect(&preprocessed_image).await?;
+        let text_boxes = detector.detect(&preprocessed_image)?;
         let detection_time = detection_start.elapsed();
 
         if text_boxes.is_empty() {
@@ -124,7 +124,7 @@ impl OcrPipeline {
 
             match get_classifier()? {
                 Some(classifier) => {
-                    classifier.classify(cropped_images).await?
+                    classifier.classify(cropped_images)?
                         .into_iter()
                         .map(|(img, _)| img) // 忽略角度信息，使用校正后的图像
                         .collect()

@@ -5,12 +5,10 @@ pub mod ui;
 
 use crate::{models::ModelManager, Config, Result};
 use axum::{
-    http::StatusCode,
     response::Json,
     routing::{get, post},
     Router,
 };
-use crate::utils::error::OcrError;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -78,11 +76,11 @@ async fn create_app(config: Config) -> Result<Router> {
         // 添加中间件
         .layer(
             ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(CompressionLayer::new())
-                .layer(CorsLayer::permissive()) // 开发环境使用宽松CORS
-                .layer(TimeoutLayer::new(Duration::from_secs(config.server_config.request_timeout)))
                 .layer(RequestBodyLimitLayer::new(config.server_config.max_request_size))
+                .layer(TimeoutLayer::new(Duration::from_secs(config.server_config.request_timeout)))
+                .layer(CorsLayer::permissive()) // 开发环境使用宽松CORS
+                .layer(CompressionLayer::new())
+                .layer(TraceLayer::new_for_http())
         )
         // 传递配置到处理器
         .with_state(config);

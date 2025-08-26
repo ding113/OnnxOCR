@@ -3,8 +3,6 @@ use crate::{Config, Result};
 use ndarray::Array3;
 use ort::{
     session::{builder::GraphOptimizationLevel, Session},
-    value::Tensor,
-    inputs,
 };
 use std::sync::Arc;
 

@@ -1,5 +1,5 @@
 use crate::{
-    ocr::{OcrOptions, OcrPipeline},
+    ocr::{OcrOptions, OcrPipeline, OcrStatus},
     utils::error::OcrError,
     Config, Result,
 };
@@ -80,7 +80,7 @@ impl<T> ApiResponse<T> {
 
 /// JSON base64上传处理器
 pub async fn ocr_json_handler(
-    State(_config): State<Config>,
+    State(config): State<Config>,
     Json(request): Json<OcrJsonRequest>,
 ) -> Result<Json<ApiResponse<crate::ocr::OcrResult>>> {
     let start_time = Instant::now();
@@ -144,7 +144,7 @@ pub async fn ocr_json_handler(
 
 /// Multipart文件上传处理器
 pub async fn ocr_upload_handler(
-    State(_config): State<Config>,
+    State(config): State<Config>,
     mut multipart: Multipart,
 ) -> Result<Json<ApiResponse<crate::ocr::OcrResult>>> {
     let start_time = Instant::now();
@@ -153,7 +153,7 @@ pub async fn ocr_upload_handler(
     tracing::info!("Processing multipart OCR request: request_id={}", request_id);
 
     let mut image_data: Option<axum::body::Bytes> = None;
-    let options = OcrOptions::default();
+    let mut options = OcrOptions::default();
 
     // 解析multipart数据
     while let Some(field) = multipart.next_field().await.map_err(|e| {

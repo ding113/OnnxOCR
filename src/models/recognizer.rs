@@ -87,8 +87,8 @@ impl Recognizer {
         let input_tensor = processed_image.insert_axis(ndarray::Axis(0));
         
         // 推理
-        let input_tensor = Tensor::from_array_view(input_tensor.view())?;
-        let outputs = self.session.run(inputs!["x" => input_tensor]?)?;
+        let input_tensor = Tensor::from_array(input_tensor)?;
+        let outputs = self.session.run(inputs!["x" => input_tensor])?;
         let predictions = outputs["softmax_2.tmp_0"]
             .try_extract_array::<f32>()?;
 
