@@ -1,4 +1,17 @@
-<!DOCTYPE html>
+use axum::{
+    response::{Html, IntoResponse},
+    http::{StatusCode, HeaderMap, HeaderValue},
+};
+
+/// 首页处理器
+pub async fn index_handler() -> impl IntoResponse {
+    let html = include_str!("../../templates/index.html");
+    Html(html)
+}
+
+/// 生成首页HTML内容
+fn generate_index_html() -> String {
+    r#"<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -92,11 +105,8 @@
             font-size: 0.9em;
         }
 
-        .option input, .option select {
+        .option input {
             margin: 0;
-            border: 1px solid #cbd5e0;
-            border-radius: 5px;
-            padding: 4px 8px;
         }
 
         .btn {
@@ -222,11 +232,10 @@
                 <span>启用角度分类</span>
             </label>
             <label class="option">
-                <span>最小置信度:</span>
                 <input type="number" id="minConfidence" value="0.5" min="0" max="1" step="0.1">
+                <span>最小置信度</span>
             </label>
             <label class="option">
-                <span>输出格式:</span>
                 <select id="outputFormat">
                     <option value="json">JSON格式</option>
                     <option value="text">纯文本</option>
@@ -235,7 +244,7 @@
             </label>
         </div>
         
-        <button class="btn" id="processBtn" onclick="processImage()" disabled>🚀 开始识别</button>
+        <button class="btn" id="processBtn" onclick="processImage()">🚀 开始识别</button>
         
         <div class="loading" id="loading">
             <div class="spinner"></div>
@@ -380,7 +389,7 @@ GET /api/info    - 服务信息</div>
             if (!data.results || data.results.length === 0) {
                 resultContent.innerHTML = '<p style="color: #666;">未识别到文字内容</p>';
             } else {
-                const html = data.results.map((item, index) => `
+                const html = data.results.map(item => `
                     <div class="result-item">
                         <div class="result-text">${item.text}</div>
                         <div class="result-confidence">置信度: ${(item.confidence * 100).toFixed(1)}%</div>
@@ -398,4 +407,43 @@ GET /api/info    - 服务信息</div>
         }
     </script>
 </body>
-</html>
+</html>"#.to_string()
+}
+
+/// 样式文件处理器
+pub async fn style_handler() -> impl IntoResponse {
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("text/css"));
+    
+    let css = r#"
+    /* 简化的CSS样式 */
+    body { 
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+        background-color: #f5f5f5;
+    }
+    .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    "#;
+    
+    (headers, css)
+}
+
+/// 在实际部署中，这个函数会返回嵌入的HTML内容
+pub fn get_embedded_html() -> &'static str {
+    // 在编译时嵌入HTML文件，如果文件不存在则返回生成的HTML
+    match std::include_str!("../../templates/index.html") {
+        html if html.len() > 100 => html, // 简单检查文件是否有效
+        _ => {
+            // 如果文件不存在或无效，使用内联HTML
+            &generate_index_html()
+        }
+    }
+}
