@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 pub struct Detector {
     session: Arc<Mutex<Session>>,
+    output_name: String, // 动态发现的输出名称
     input_size: (usize, usize), // (height, width)
     thresh: f32,
     #[allow(dead_code)]
@@ -36,11 +37,29 @@ impl Detector {
             .with_intra_threads(config.onnx_config.intra_threads)?
             .commit_from_file(&model_path)?;
 
+        // 动态发现输出名称
+        let output_name = if session.outputs.is_empty() {
+            return Err(OcrError::ModelLoad(
+                "Detection model has no outputs".to_string()
+            ));
+        } else {
+            let output_name = session.outputs[0].name.clone();
+            tracing::info!("Detection model output: '{}'", output_name);
+            
+            // 记录所有可用输出用于调试
+            for (i, output) in session.outputs.iter().enumerate() {
+                tracing::debug!("Detection output[{}]: '{}'", i, output.name);
+            }
+            
+            output_name
+        };
+
         let session = Arc::new(Mutex::new(session));
         
         Ok(Self {
             session,
-            input_size: (960, 960), // PPOCRv5 默认输入尺寸
+            output_name,
+            input_size: (960, 960), // TODO: PPOCRv5 默认输入尺寸
             thresh: 0.3,
             box_thresh: 0.6,
             unclip_ratio: 1.5,
@@ -60,8 +79,19 @@ impl Detector {
         let prediction = {
             let mut session = self.session.lock();
             let outputs = session.run(inputs!["x" => input_tensor])?;
-            // 立即提取数据，释放对session的借用
-            outputs["sigmoid_0.tmp_0"].try_extract_array::<f32>()?.into_owned()
+            
+            // 使用动态发现的输出名称
+            match outputs.get(&self.output_name) {
+                Some(output) => output.try_extract_array::<f32>()?.into_owned(),
+                None => {
+                    // 提供详细的错误诊断信息
+                    let available_outputs: Vec<String> = outputs.keys().cloned().collect();
+                    return Err(OcrError::Inference(format!(
+                        "Output '{}' not found. Available outputs: {:?}",
+                        self.output_name, available_outputs
+                    )));
+                }
+            }
         };
 
         // 后处理：从概率图中提取文字框

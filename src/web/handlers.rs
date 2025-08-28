@@ -124,12 +124,18 @@ pub async fn ocr_json_handler(
         });
     }
 
-    // 执行OCR处理
-    let result = OcrPipeline::process_base64(
-        &request.image,
-        options,
-        if config.dev_mode { Some(status_tx) } else { None },
-    ).await?;
+    // 执行OCR处理 - 使用 panic 捕获机制
+    let result = crate::utils::error::OcrError::catch_unwind(move || {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                OcrPipeline::process_base64(
+                    &request.image,
+                    options,
+                    if config.dev_mode { Some(status_tx) } else { None },
+                ).await
+            })
+        })
+    })??;
 
     let processing_time = start_time.elapsed();
     
@@ -237,12 +243,18 @@ pub async fn ocr_upload_handler(
         });
     }
 
-    // 执行OCR处理
-    let result = OcrPipeline::process_bytes(
-        image_data,
-        options,
-        if config.dev_mode { Some(status_tx) } else { None },
-    ).await?;
+    // 执行OCR处理 - 使用 panic 捕获机制
+    let result = crate::utils::error::OcrError::catch_unwind(move || {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                OcrPipeline::process_bytes(
+                    image_data,
+                    options,
+                    if config.dev_mode { Some(status_tx) } else { None },
+                ).await
+            })
+        })
+    })??;
 
     let processing_time = start_time.elapsed();
     

@@ -40,11 +40,44 @@ pub enum OcrError {
     #[error("ORT error: {0}")]
     Ort(#[from] ort::Error),
 
+    #[error("Model compatibility error: {0}")]
+    ModelCompatibility(String),
+
+    #[error("Panic caught: {0}")]
+    PanicCaught(String),
+
     #[error("Internal server error: {0}")]
     Internal(String),
 }
 
 impl OcrError {
+    /// 从 panic 消息创建错误
+    pub fn from_panic(msg: &str) -> Self {
+        OcrError::PanicCaught(format!("Operation panicked: {}", msg))
+    }
+
+    /// 安全执行可能 panic 的操作
+    pub fn catch_unwind<F, T>(f: F) -> Result<T, OcrError> 
+    where 
+        F: std::panic::UnwindSafe + FnOnce() -> T,
+    {
+        match std::panic::catch_unwind(f) {
+            Ok(result) => Ok(result),
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown panic occurred".to_string()
+                };
+                
+                tracing::error!("Caught panic: {}", panic_msg);
+                Err(OcrError::from_panic(&panic_msg))
+            }
+        }
+    }
+
     pub fn status_code(&self) -> StatusCode {
         match self {
             OcrError::InvalidInput(_) => StatusCode::BAD_REQUEST,
@@ -53,6 +86,8 @@ impl OcrError {
             OcrError::Base64(_) => StatusCode::BAD_REQUEST,
             OcrError::Json(_) => StatusCode::BAD_REQUEST,
             OcrError::ModelLoad(_) => StatusCode::SERVICE_UNAVAILABLE,
+            OcrError::ModelCompatibility(_) => StatusCode::SERVICE_UNAVAILABLE,
+            OcrError::PanicCaught(_) => StatusCode::INTERNAL_SERVER_ERROR,
             OcrError::Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -72,6 +107,8 @@ impl OcrError {
             OcrError::Base64(_) => "BASE64_DECODE_ERROR",
             OcrError::ImageDecode(_) => "IMAGE_DECODE_ERROR",
             OcrError::Ort(_) => "ORT_ERROR",
+            OcrError::ModelCompatibility(_) => "MODEL_COMPATIBILITY_ERROR",
+            OcrError::PanicCaught(_) => "PANIC_CAUGHT",
             OcrError::Internal(_) => "INTERNAL_ERROR",
         }
     }

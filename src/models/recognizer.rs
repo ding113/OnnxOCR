@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 pub struct Recognizer {
     session: Arc<Mutex<Session>>,
+    output_name: String, // 动态发现的输出名称
     input_size: (usize, usize, usize), // (C, H, W)
     dict: Vec<String>,
 }
@@ -41,6 +42,23 @@ impl Recognizer {
             .with_intra_threads(config.onnx_config.intra_threads)?
             .commit_from_file(&model_path)?;
 
+        // 动态发现输出名称
+        let output_name = if session.outputs.is_empty() {
+            return Err(OcrError::ModelLoad(
+                "Recognition model has no outputs".to_string()
+            ));
+        } else {
+            let output_name = session.outputs[0].name.clone();
+            tracing::info!("Recognition model output: '{}'", output_name);
+            
+            // 记录所有可用输出用于调试
+            for (i, output) in session.outputs.iter().enumerate() {
+                tracing::debug!("Recognition output[{}]: '{}'", i, output.name);
+            }
+            
+            output_name
+        };
+
         // 加载字典
         let dict_content = fs::read_to_string(&dict_path)
             .map_err(|e| OcrError::ModelLoad(format!("Failed to read dictionary: {}", e)))?;
@@ -58,6 +76,7 @@ impl Recognizer {
 
         Ok(Self {
             session: Arc::new(Mutex::new(session)),
+            output_name,
             input_size: (3, 48, 320), // PPOCRv5 识别器默认输入尺寸
             dict,
         })
@@ -71,7 +90,7 @@ impl Recognizer {
 
         let mut results = Vec::with_capacity(images.len());
         
-        // 批处理识别（简化版本，实际应支持动态批处理）
+        // 批处理识别（TODO: 应支持动态批处理）
         for image in images {
             let (text, confidence) = self.recognize_single(&image)?;
             results.push((text, confidence));
@@ -92,8 +111,19 @@ impl Recognizer {
         let predictions = {
             let mut session = self.session.lock();
             let outputs = session.run(inputs!["x" => input_tensor])?;
-            // 立即提取数据，释放对session的借用
-            outputs["softmax_2.tmp_0"].try_extract_array::<f32>()?.into_owned()
+            
+            // 使用动态发现的输出名称
+            match outputs.get(&self.output_name) {
+                Some(output) => output.try_extract_array::<f32>()?.into_owned(),
+                None => {
+                    // 提供详细的错误诊断信息
+                    let available_outputs: Vec<String> = outputs.keys().cloned().collect();
+                    return Err(OcrError::Inference(format!(
+                        "Output '{}' not found. Available outputs: {:?}",
+                        self.output_name, available_outputs
+                    )));
+                }
+            }
         };
 
         // CTC解码

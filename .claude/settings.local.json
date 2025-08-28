@@ -4,7 +4,8 @@
       "WebSearch",
       "Bash(cargo check:*)",
       "Bash(rustc --version)",
-      "Bash(cargo --version)"
+      "Bash(cargo --version)",
+      "WebFetch(domain:docs.rs)"
     ],
     "deny": [],
     "ask": []
