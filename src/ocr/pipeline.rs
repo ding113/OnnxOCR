@@ -79,7 +79,7 @@ impl OcrPipeline {
         }
 
         let preprocessed_image = ImagePreprocessor::preprocess_for_ocr(image)?;
-        let preprocessing_time = start_time.elapsed();
+        let _preprocessing_time = start_time.elapsed();
 
         // 文字检测
         if let Some(ref tx) = status_tx {
@@ -93,7 +93,7 @@ impl OcrPipeline {
         let detector = get_detector()?;
         let detection_start = Instant::now();
         let text_boxes = detector.detect(&preprocessed_image)?;
-        let detection_time = detection_start.elapsed();
+        let _detection_time = detection_start.elapsed();
 
         if text_boxes.is_empty() {
             return Ok(Self::create_empty_result(start_time.elapsed(), options.output_format));
@@ -137,7 +137,7 @@ impl OcrPipeline {
         } else {
             cropped_images
         };
-        let classification_time = classification_start.elapsed();
+        let _classification_time = classification_start.elapsed();
 
         // 文字识别
         if let Some(ref tx) = status_tx {
@@ -158,7 +158,7 @@ impl OcrPipeline {
             &status_tx
         ).await?;
         
-        let recognition_time = recognition_start.elapsed();
+        let _recognition_time = recognition_start.elapsed();
 
         // 后处理
         if let Some(ref tx) = status_tx {
@@ -172,6 +172,9 @@ impl OcrPipeline {
         let postprocess_start = Instant::now();
         let min_confidence = options.min_confidence.unwrap_or(0.5);
         let total_time = start_time.elapsed();
+        
+        // 在移动text_boxes之前保存长度，用于后续日志记录
+        let detected_boxes_count = text_boxes.len();
 
         let result = ResultFormatter::format_result(
             text_boxes,
@@ -181,7 +184,7 @@ impl OcrPipeline {
             min_confidence,
         )?;
 
-        let postprocess_time = postprocess_start.elapsed();
+        let _postprocess_time = postprocess_start.elapsed();
 
         // 发送完成状态
         if let Some(ref tx) = status_tx {
@@ -194,7 +197,7 @@ impl OcrPipeline {
 
         tracing::info!(
             "OCR completed: detected={}, recognized={}, total_time={:.3}s",
-            text_boxes.len(),
+            detected_boxes_count,
             result.results.len(),
             total_time.as_secs_f32()
         );

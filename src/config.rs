@@ -90,7 +90,7 @@ impl Config {
     
     /// 获取分类模型路径
     pub fn cls_model_path(&self) -> PathBuf {
-        self.models_dir.join("ppocrv4/cls/cls.onnx")
+        self.models_dir.join("ppocrv5/cls/cls.onnx")
     }
     
     /// 获取字典文件路径

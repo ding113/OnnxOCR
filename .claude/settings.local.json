@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)"
     ],
     "deny": [],
     "ask": []

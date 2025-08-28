@@ -54,7 +54,7 @@ impl Detector {
         
         // 推理
         let input_tensor = Tensor::from_array(input_tensor)?;
-        let outputs = self.session.run(inputs!["x" => input_tensor])?;
+        let outputs = self.session.as_ref().run(inputs!["x" => input_tensor])?;
         let prediction = outputs["sigmoid_0.tmp_0"]
             .try_extract_array::<f32>()?;
 

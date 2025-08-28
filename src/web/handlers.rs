@@ -110,11 +110,12 @@ pub async fn ocr_json_handler(
     
     // 启动后台任务监控进度（开发模式）
     if config.dev_mode {
+        let request_id_clone = request_id.clone(); // 为闭包创建克隆
         tokio::spawn(async move {
             while let Some(status) = status_rx.recv().await {
                 tracing::debug!(
                     "OCR Progress [{}]: {:?} - {:.1}% - {}",
-                    request_id,
+                    request_id_clone,
                     status.stage,
                     status.progress * 100.0,
                     status.message
@@ -222,11 +223,12 @@ pub async fn ocr_upload_handler(
     
     // 启动后台任务监控进度（开发模式）
     if config.dev_mode {
+        let request_id_clone = request_id.clone(); // 为闭包创建克隆
         tokio::spawn(async move {
             while let Some(status) = status_rx.recv().await {
                 tracing::debug!(
                     "OCR Progress [{}]: {:?} - {:.1}% - {}",
-                    request_id,
+                    request_id_clone,
                     status.stage,
                     status.progress * 100.0,
                     status.message
