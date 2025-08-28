@@ -1,0 +1,90 @@
+[project]
+name = "onnxocr-modern"
+version = "2.0.0"
+description = "Modern high-performance ONNX OCR service"
+authors = [
+    {name = "ding113", email = "h.ding.262@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+
+dependencies = [
+    # 🚀 Modern Web Framework Stack
+    "fastapi>=0.110.0",           # High-performance async API + auto docs
+    "uvicorn[standard]>=0.30.0",  # ASGI server with built-in multiprocessing
+    "pydantic>=2.5.0",           # Data validation
+    "pydantic-settings>=2.1.0",  # Settings management with BaseSettings
+    "python-multipart>=0.0.9",   # File upload support
+    
+    # 🧠 Core ML Engine (Python 3.13 optimized)
+    "onnxruntime>=1.22.1",       # ONNX inference engine (CPU-only)
+    "opencv-python-headless>=4.12.0", # Image processing (no GUI dependencies)
+    "numpy>=2.0.0",              # Remove version constraint, use latest
+    "scikit-image>=0.24.0",      # Image algorithms
+    # 图像增强已移除 - imgaug过时且未使用，AlbumentationsX作为未来可选扩展
+    
+    # 📄 Document Processing
+    "pymupdf>=1.24.0",           # PDF rendering engine
+    "shapely>=2.0.0",            # Geometric objects processing
+    "pyclipper>=1.3.0",         # Polygon clipping
+    
+    # 🔧 Enhanced Features
+    "python-dotenv>=1.0.0",     # Environment variable management
+    "structlog>=24.1.0",        # Structured logging
+    "prometheus-client>=0.20.0", # Performance monitoring
+    "httpx>=0.27.0",             # Async HTTP client
+    "pillow>=10.2.0",            # Image format support
+    "jinja2>=3.1.0",             # Template engine (Web UI)
+    "aiofiles>=24.1.0",         # Async file operations
+]
+
+[project.optional-dependencies]
+augmentation = [
+    "albumentationsx>=2.0.10",  # 高性能图像增强库 (AGPL/商业双重许可)
+    # 或者使用原版 "albumentations>=1.4.0"  # MIT许可但不再维护
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",  # Test HTTP client
+    "black>=24.0.0",  # Code formatter
+    "ruff>=0.3.0",    # Fast linter
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["onnxocr"]
+
+[tool.uv]
+# UV-specific configuration
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "black>=24.0.0",
+    "ruff>=0.3.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py313']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+select = ["E", "W", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
+
+[project.scripts]
+onnxocr-dev = "dev:main"
+onnxocr-prod = "start_production:main"

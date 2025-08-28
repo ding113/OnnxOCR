@@ -1,25 +1,147 @@
+networks:
+  onnxocr-network:
+    driver: bridge
+    name: onnxocr-network
+
+# 💾 数据卷配置
+volumes:
+  # 持久化数据卷
+  onnxocr-data:
+    driver: local
+    name: onnxocr-data
+  onnxocr-logs:
+    driver: local
+    name: onnxocr-logs
+  onnxocr-cache:
+    driver: local
+    name: onnxocr-cache
+
 services:
-  onnxocr-service:
+  # 🚀 主要OCR服务
+  onnxocr-modern:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: onnxocr-service
+      # 构建参数
+      args:
+        - PYTHON_VERSION=3.13
+        - UV_VERSION=0.8.13
+      # 构建缓存配置
+      cache_from:
+        - python:3.13-slim
+        - ghcr.io/astral-sh/uv:0.8.13
+    
+    container_name: onnxocr-modern
+    hostname: onnxocr-service
+    
+    # 🌍 环境变量配置
+    environment:
+      # === 核心服务配置 ===
+      - HOST=0.0.0.0
+      - PORT=5005
+      - WORKERS=${WORKERS:-auto}  # 支持外部配置
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - ACCESS_LOG=${ACCESS_LOG:-true}
+      
+      # === ONNX Runtime优化 ===
+      - ONNX_THREAD_POOL_SIZE=${ONNX_THREADS:-0}  # 0=auto
+      - ORT_DISABLE_ALL_OPTIMIZATIONS=0
+      - ORT_ENABLE_CPU_FP16_OPS=1
+      
+      # === OpenMP优化 ===
+      - OMP_NUM_THREADS=${OMP_THREADS:-0}  # 0=auto
+      - MKL_NUM_THREADS=${MKL_THREADS:-0}
+      - OPENBLAS_NUM_THREADS=${OPENBLAS_THREADS:-0}
+      
+      # === 内存和性能配置 ===
+      - MAX_MEMORY_MB=${MAX_MEMORY_MB:-2048}
+      - TIMEOUT=${TIMEOUT:-300}
+      - KEEP_ALIVE=${KEEP_ALIVE:-5}
+      - MAX_REQUESTS=${MAX_REQUESTS:-1000}
+      
+      # === Python优化 ===
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONIOENCODING=utf-8
+      
+      # === 时区配置 ===
+      - TZ=Asia/Shanghai
+    
+    # 🔌 端口映射
     ports:
-      - "5005:5005"
+      - "${PORT:-5005}:5005"
+    
+    # 🔄 重启策略
     restart: unless-stopped
+    
+    # 📊 资源限制配置
+    deploy:
+      resources:
+        limits:
+          # CPU限制 (根据你的硬件调整)
+          cpus: '${CPU_LIMIT:-0}'  # 0表示使用所有CPU
+          # 内存限制
+          memory: ${MEMORY_LIMIT:-4G}
+        reservations:
+          # CPU保证 (最少保证的CPU资源)
+          cpus: '${CPU_RESERVATION:-1.0}'
+          # 内存保证 (最少保证的内存)
+          memory: ${MEMORY_RESERVATION:-1G}
+      
+      # 🔄 重启策略
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    
+    # 📁 数据卷挂载
     volumes:
-      # === 核心数据处理目录 - 读写挂载，持久化用户数据 ===
-      - "./data/uploads:/app/uploads"                          # WebUI文件上传存储
-      - "./data/results:/app/results"                          # WebUI处理结果 + zip下载
-      - "./data/inference_results:/app/onnxocr/inference_results"  # OCR可视化图片输出
-      - "./data/output:/app/onnxocr/output"                    # 图片裁剪结果保存
-      - "./data/logs:/app/onnxocr/log_output"                  # 应用运行日志
+      # === 数据持久化 ===
+      - "onnxocr-data:/app/data"                    # 应用数据
+      - "onnxocr-logs:/app/logs"                    # 日志文件
+      - "onnxocr-cache:/app/.cache"                 # 缓存数据
+      
+      # === 本地开发挂载 (可选，生产环境中注释掉) ===
+      # - "./data/uploads:/app/uploads"               # 文件上传
+      # - "./data/results:/app/results"               # 处理结果
+      # - "./data/models:/app/onnxocr/models"         # 模型文件 (如需自定义)
+      
+      # === 配置文件挂载 (可选) ===
+      # - "./.env:/app/.env:ro"                       # 环境配置文件
+      # - "./custom_config.yaml:/app/config.yaml:ro" # 自定义配置
+    
+    # 🌐 网络配置
+    networks:
+      - onnxocr-network
+    
+    # 🩺 健康检查配置
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
+      interval: 30s      # 检查间隔
+      timeout: 10s       # 检查超时
+      retries: 3         # 失败重试次数
+      start_period: 60s  # 启动等待时间 (模型预热)
+    
+    # ⚙️ 系统配置
     tmpfs:
-      - /tmp                   # 临时文件使用内存文件系统，提高性能
+      - /tmp:rw,size=1G,mode=1777    # 临时文件系统 (1GB RAM disk)
+      - /app/tmp:rw,size=512M        # 应用临时目录
+    
+    # 🔐 安全配置
+    security_opt:
+      - no-new-privileges:true       # 禁止提权
+    
+    # 📝 依赖关系
+    depends_on:
+      # 如果需要数据库或其他服务，在这里配置
+      # redis:
+      #   condition: service_healthy
+    
+    # 📋 标签 (用于监控和管理)
+    labels:
+      - "service.name=onnxocr-modern"
+      - "service.version=2.0.0"
+      - "service.environment=${ENVIRONMENT:-development}"
+      - "monitoring.enabled=true"
+      - "backup.enabled=true"
