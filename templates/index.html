@@ -149,6 +149,34 @@
             text-align: left;
             display: none;
         }
+        
+        .visualization {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .canvas-container {
+            flex: 1;
+            min-width: 300px;
+            text-align: center;
+        }
+        
+        .canvas-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4a5568;
+        }
+        
+        .canvas {
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            max-width: 100%;
+            height: auto;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
 
         .result-item {
             background: #f8fafc;
@@ -244,6 +272,19 @@
         
         <div class="results" id="results">
             <h3>识别结果</h3>
+            
+            <!-- 双图对照可视化 -->
+            <div class="visualization" id="visualization" style="display: none;">
+                <div class="canvas-container">
+                    <div class="canvas-title">原始图像</div>
+                    <canvas id="originalCanvas" class="canvas"></canvas>
+                </div>
+                <div class="canvas-container">
+                    <div class="canvas-title">检测结果</div>
+                    <canvas id="annotatedCanvas" class="canvas"></canvas>
+                </div>
+            </div>
+            
             <div id="resultContent"></div>
         </div>
         
@@ -287,8 +328,10 @@ GET /api/info    - 服务信息</div>
         const loading = document.getElementById('loading');
         const results = document.getElementById('results');
         const resultContent = document.getElementById('resultContent');
+        const visualization = document.getElementById('visualization');
         
         let selectedFile = null;
+        let originalImageData = null; // 存储原始图像数据用于可视化
 
         // 点击上传区域
         uploadArea.addEventListener('click', () => {
@@ -331,6 +374,14 @@ GET /api/info    - 服务信息</div>
             }
             
             selectedFile = file;
+            
+            // 读取图像数据用于可视化
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                originalImageData = e.target.result;
+            };
+            reader.readAsDataURL(file);
+            
             uploadArea.innerHTML = `
                 <div class="upload-text">✅ 已选择: ${file.name}</div>
                 <div class="upload-hint">${(file.size / 1024 / 1024).toFixed(2)} MB</div>
@@ -377,6 +428,7 @@ GET /api/info    - 服务信息</div>
         }
 
         function displayResults(data) {
+            // 显示文字结果
             if (!data.results || data.results.length === 0) {
                 resultContent.innerHTML = '<p style="color: #666;">未识别到文字内容</p>';
             } else {
@@ -394,7 +446,85 @@ GET /api/info    - 服务信息</div>
                 `;
             }
             
+            // 显示可视化对比
+            if (originalImageData && data.results && data.results.length > 0) {
+                drawVisualization(data.results);
+                visualization.style.display = 'flex';
+            } else {
+                visualization.style.display = 'none';
+            }
+            
             results.style.display = 'block';
+        }
+        
+        // 绘制双图对照可视化
+        function drawVisualization(results) {
+            const originalCanvas = document.getElementById('originalCanvas');
+            const annotatedCanvas = document.getElementById('annotatedCanvas');
+            const originalCtx = originalCanvas.getContext('2d');
+            const annotatedCtx = annotatedCanvas.getContext('2d');
+            
+            const img = new Image();
+            img.onload = function() {
+                // 设置画布尺寸
+                const maxWidth = 400;
+                const scale = Math.min(maxWidth / img.width, maxWidth / img.height);
+                const displayWidth = img.width * scale;
+                const displayHeight = img.height * scale;
+                
+                originalCanvas.width = displayWidth;
+                originalCanvas.height = displayHeight;
+                annotatedCanvas.width = displayWidth;
+                annotatedCanvas.height = displayHeight;
+                
+                // 绘制原始图像
+                originalCtx.drawImage(img, 0, 0, displayWidth, displayHeight);
+                
+                // 绘制带检测框的图像
+                annotatedCtx.drawImage(img, 0, 0, displayWidth, displayHeight);
+                
+                // 绘制检测框和文字
+                annotatedCtx.strokeStyle = '#ff4444';
+                annotatedCtx.lineWidth = 2;
+                annotatedCtx.fillStyle = '#ff4444';
+                annotatedCtx.font = '14px Arial';
+                
+                results.forEach((result, index) => {
+                    if (result.bounding_box && result.bounding_box.length >= 4) {
+                        // 绘制边界框
+                        annotatedCtx.beginPath();
+                        const box = result.bounding_box;
+                        
+                        // 缩放坐标
+                        const scaledBox = box.map(point => [
+                            point[0] * scale,
+                            point[1] * scale
+                        ]);
+                        
+                        annotatedCtx.moveTo(scaledBox[0][0], scaledBox[0][1]);
+                        for (let i = 1; i < scaledBox.length; i++) {
+                            annotatedCtx.lineTo(scaledBox[i][0], scaledBox[i][1]);
+                        }
+                        annotatedCtx.closePath();
+                        annotatedCtx.stroke();
+                        
+                        // 绘制序号和文字
+                        const textX = scaledBox[0][0];
+                        const textY = scaledBox[0][1] - 5;
+                        
+                        // 背景
+                        annotatedCtx.fillStyle = '#ff4444';
+                        const textWidth = annotatedCtx.measureText(`${index + 1}: ${result.text}`).width + 8;
+                        annotatedCtx.fillRect(textX, textY - 16, textWidth, 18);
+                        
+                        // 文字
+                        annotatedCtx.fillStyle = 'white';
+                        annotatedCtx.fillText(`${index + 1}: ${result.text}`, textX + 4, textY - 4);
+                    }
+                });
+            };
+            
+            img.src = originalImageData;
         }
     </script>
 </body>
