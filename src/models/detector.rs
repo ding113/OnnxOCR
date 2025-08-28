@@ -53,14 +53,14 @@ impl Detector {
         // 创建输入tensor
         let input_tensor = resized_img.insert_axis(Axis(0)); // 添加batch维度
         
-        // 推理
+        // 推理 - 立即提取数据避免生命周期冲突
         let input_tensor = Tensor::from_array(input_tensor)?;
-        let outputs = {
+        let prediction = {
             let mut session = self.session.lock();
-            session.run(inputs!["x" => input_tensor])?
+            let outputs = session.run(inputs!["x" => input_tensor])?;
+            // 立即提取数据，释放对session的借用
+            outputs["sigmoid_0.tmp_0"].try_extract_array::<f32>()?.into_owned()
         };
-        let prediction = outputs["sigmoid_0.tmp_0"]
-            .try_extract_array::<f32>()?;
 
         // 后处理：从概率图中提取文字框
         let boxes = self.postprocess(&prediction, scale_x, scale_y)?;

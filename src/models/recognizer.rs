@@ -87,14 +87,14 @@ impl Recognizer {
         // 添加batch维度
         let input_tensor = processed_image.insert_axis(ndarray::Axis(0));
         
-        // 推理
+        // 推理 - 立即提取数据避免生命周期冲突
         let input_tensor = Tensor::from_array(input_tensor)?;
-        let outputs = {
+        let predictions = {
             let mut session = self.session.lock();
-            session.run(inputs!["x" => input_tensor])?
+            let outputs = session.run(inputs!["x" => input_tensor])?;
+            // 立即提取数据，释放对session的借用
+            outputs["softmax_2.tmp_0"].try_extract_array::<f32>()?.into_owned()
         };
-        let predictions = outputs["softmax_2.tmp_0"]
-            .try_extract_array::<f32>()?;
 
         // CTC解码
         let (text, confidence) = self.ctc_decode(&predictions)?;

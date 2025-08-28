@@ -73,15 +73,10 @@ async fn create_app(config: Config) -> Result<Router> {
         .route("/health", get(health_handler))
         .route("/api/info", get(info_handler))
         
-        // 添加中间件
-        .layer(
-            ServiceBuilder::new()
-                .layer(RequestBodyLimitLayer::new(config.server_config.max_request_size))
-                .layer(TimeoutLayer::new(Duration::from_secs(config.server_config.request_timeout)))
-                .layer(CorsLayer::permissive()) // 开发环境使用宽松CORS
-                .layer(CompressionLayer::new())
-                .layer(TraceLayer::new_for_http()) // 使用简单的默认配置
-        )
+        // 添加中间件 - 使用分层模式避免复杂类型嵌套
+        .layer(RequestBodyLimitLayer::new(config.server_config.max_request_size))
+        .layer(TimeoutLayer::new(Duration::from_secs(config.server_config.request_timeout)))
+        .layer(CorsLayer::permissive()) // 开发环境使用宽松CORS
         // 传递配置到处理器
         .with_state(config);
 
