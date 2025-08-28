@@ -13,7 +13,9 @@ pub struct Detector {
     session: Arc<Mutex<Session>>,
     input_size: (usize, usize), // (height, width)
     thresh: f32,
+    #[allow(dead_code)]
     box_thresh: f32,
+    #[allow(dead_code)]
     unclip_ratio: f32,
 }
 

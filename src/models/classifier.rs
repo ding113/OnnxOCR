@@ -8,8 +8,11 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub struct Classifier {
+    #[allow(dead_code)]
     session: Arc<Mutex<Session>>,
+    #[allow(dead_code)]
     input_size: (usize, usize, usize), // (C, H, W)
+    #[allow(dead_code)]
     thresh: f32,
 }
 
