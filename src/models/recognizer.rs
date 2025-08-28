@@ -117,7 +117,7 @@ impl Recognizer {
                 Some(output) => output.try_extract_array::<f32>()?.into_owned(),
                 None => {
                     // 提供详细的错误诊断信息
-                    let available_outputs: Vec<String> = outputs.keys().cloned().collect();
+                    let available_outputs: Vec<String> = outputs.keys().map(|s| s.to_string()).collect();
                     return Err(OcrError::Inference(format!(
                         "Output '{}' not found. Available outputs: {:?}",
                         self.output_name, available_outputs
