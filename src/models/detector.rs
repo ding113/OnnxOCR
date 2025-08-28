@@ -63,7 +63,7 @@ impl Detector {
         };
 
         // 后处理：从概率图中提取文字框
-        let boxes = self.postprocess(&prediction, scale_x, scale_y)?;
+        let boxes = self.postprocess(&prediction.view(), scale_x, scale_y)?;
         
         Ok(boxes)
     }

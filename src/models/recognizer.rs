@@ -97,7 +97,7 @@ impl Recognizer {
         };
 
         // CTC解码
-        let (text, confidence) = self.ctc_decode(&predictions)?;
+        let (text, confidence) = self.ctc_decode(&predictions.view())?;
         
         Ok((text, confidence))
     }
