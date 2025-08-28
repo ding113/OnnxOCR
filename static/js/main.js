@@ -166,9 +166,11 @@ class OCRWebUI {
         }
 
         try {
-            // Read file as base64
-            const base64 = await this.fileToBase64(file);
-            this.currentImageData = base64.split(',')[1]; // Remove data URL prefix
+            // Store the original file object (modern approach)
+            this.currentImageFile = file;
+            
+            // Create URL for display (more efficient than base64)
+            const imageUrl = URL.createObjectURL(file);
             
             // Load image for display and info
             const img = new Image();
@@ -177,22 +179,22 @@ class OCRWebUI {
                 this.displayImage(img);
                 this.updateImageInfo(img, file);
                 this.processBtn.disabled = false;
+                
+                // Clean up object URL to free memory
+                URL.revokeObjectURL(imageUrl);
             };
-            img.src = base64;
+            img.onerror = () => {
+                URL.revokeObjectURL(imageUrl);
+                this.showError('图片加载失败，请检查文件格式');
+            };
+            img.src = imageUrl;
             
         } catch (error) {
             this.showError('图片加载失败: ' + error.message);
         }
     }
 
-    fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
+    // Remove fileToBase64 method as it's no longer needed
 
     displayImage(img) {
         this.originalImage.src = img.src;
@@ -253,7 +255,7 @@ class OCRWebUI {
     }
 
     async processImage() {
-        if (!this.currentImageData) {
+        if (!this.currentImageFile) {
             this.showError('请先上传图片');
             return;
         }
@@ -261,27 +263,19 @@ class OCRWebUI {
         const startTime = Date.now();
         
         try {
-            this.showProgress('正在处理图片...', 0);
+            this.showProgress('准备上传...', 0);
             this.updateStatus('processing', '处理中...');
             
-            // Simulate progress
-            this.simulateProgress();
-            
-            const requestData = {
-                image: this.currentImageData,
-                model_version: this.modelSelect.value,
-                det: this.detCheck.checked,
-                rec: this.recCheck.checked,
-                cls: this.clsCheck.checked
-            };
+            // Use FormData for modern file upload
+            const formData = new FormData();
+            formData.append('file', this.currentImageFile);
+            formData.append('model_version', this.modelSelect.value);
+            formData.append('det', this.detCheck.checked);
+            formData.append('rec', this.recCheck.checked);
+            formData.append('cls', this.clsCheck.checked);
 
-            const response = await fetch('/ocr', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestData)
-            });
+            // Create XMLHttpRequest for upload progress tracking
+            const response = await this.uploadWithProgress('/v2/ocr', formData);
 
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -309,29 +303,88 @@ class OCRWebUI {
         }
     }
 
+    uploadWithProgress(url, formData) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            
+            // Track upload progress
+            xhr.upload.addEventListener('progress', (event) => {
+                if (event.lengthComputable) {
+                    const uploadPercent = Math.round((event.loaded / event.total) * 50); // Upload = 50% of total
+                    this.showProgress(`上传中... ${uploadPercent}%`, uploadPercent);
+                }
+            });
+
+            // Track download progress (response)
+            xhr.addEventListener('progress', (event) => {
+                if (event.lengthComputable) {
+                    const downloadPercent = Math.round((event.loaded / event.total) * 25); // Download = 25% of total
+                    this.showProgress(`接收结果... ${downloadPercent + 75}%`, downloadPercent + 75);
+                }
+            });
+
+            xhr.addEventListener('load', () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    this.showProgress('处理完成', 100);
+                    resolve({
+                        ok: true,
+                        status: xhr.status,
+                        statusText: xhr.statusText,
+                        json: async () => JSON.parse(xhr.responseText)
+                    });
+                } else {
+                    reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+                }
+            });
+
+            xhr.addEventListener('error', () => {
+                reject(new Error('网络连接错误'));
+            });
+
+            xhr.addEventListener('timeout', () => {
+                reject(new Error('请求超时'));
+            });
+
+            xhr.addEventListener('loadstart', () => {
+                this.showProgress('开始上传...', 0);
+            });
+
+            xhr.addEventListener('loadend', () => {
+                // Processing phase - simulate server-side progress
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    this.showProgress('服务器处理中...', 80);
+                }
+            });
+
+            xhr.open('POST', url);
+            xhr.timeout = 60000; // 60 second timeout
+            xhr.send(formData);
+        });
+    }
+
     showProgress(text, progress = 0) {
         this.progressText.textContent = text;
         this.progressFill.style.width = progress + '%';
+        
+        // Add visual feedback based on progress stage
+        if (progress < 50) {
+            // Upload phase - blue color
+            this.progressFill.style.background = 'linear-gradient(90deg, #3b82f6, #60a5fa)';
+        } else if (progress < 80) {
+            // Processing phase - orange color  
+            this.progressFill.style.background = 'linear-gradient(90deg, #f59e0b, #fbbf24)';
+        } else {
+            // Completion phase - green color
+            this.progressFill.style.background = 'linear-gradient(90deg, #10b981, #34d399)';
+        }
+        
         this.progressOverlay.style.display = 'flex';
     }
 
     hideProgress() {
         this.progressOverlay.style.display = 'none';
-    }
-
-    simulateProgress() {
-        let progress = 0;
-        const interval = setInterval(() => {
-            progress += Math.random() * 15;
-            if (progress >= 90) {
-                clearInterval(interval);
-                progress = 95;
-            }
-            this.progressFill.style.width = progress + '%';
-        }, 200);
-        
-        // Clear interval after 10 seconds as fallback
-        setTimeout(() => clearInterval(interval), 10000);
+        // Reset progress fill color
+        this.progressFill.style.background = 'linear-gradient(90deg, #3b82f6, #60a5fa)';
     }
 
     displayResults(result, processTime) {
