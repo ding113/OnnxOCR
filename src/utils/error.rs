@@ -40,6 +40,9 @@ pub enum OcrError {
     #[error("ORT error: {0}")]
     Ort(#[from] ort::Error),
 
+    #[error("HTTP error: {0}")]
+    Http(#[from] axum::http::Error),
+
     #[error("Model compatibility error: {0}")]
     ModelCompatibility(String),
 

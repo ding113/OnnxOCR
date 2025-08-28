@@ -1,11 +1,14 @@
 use crate::{
+    image::postprocessing::ResultFormatter,
     ocr::{OcrOptions, OcrPipeline, OcrStatus},
     utils::error::OcrError,
     Config, Result,
 };
 use axum::{
     extract::{Multipart, State},
-    response::Json,
+    response::{Json, Response},
+    http::{header::CONTENT_TYPE, StatusCode},
+    body::Body,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -82,7 +85,7 @@ impl<T> ApiResponse<T> {
 pub async fn ocr_json_handler(
     State(config): State<Config>,
     Json(request): Json<OcrJsonRequest>,
-) -> Result<Json<ApiResponse<crate::ocr::OcrResult>>> {
+) -> Result<Response> {
     let start_time = Instant::now();
     let request_id = uuid::Uuid::new_v4().to_string();
     
@@ -99,7 +102,7 @@ pub async fn ocr_json_handler(
     // 创建OCR选项
     let options = OcrOptions {
         force_ocr: request.force_ocr,
-        output_format: request.output_format,
+        output_format: request.output_format.clone(),
         use_angle_cls: request.use_angle_cls,
         min_confidence: request.min_confidence,
         paginate_output: request.paginate_output,
@@ -140,14 +143,15 @@ pub async fn ocr_json_handler(
         processing_time.as_secs_f32()
     );
 
-    Ok(Json(ApiResponse::success(result)))
+    // 根据输出格式返回不同的响应
+    create_response(result, request.output_format.as_deref())
 }
 
 /// Multipart文件上传处理器
 pub async fn ocr_upload_handler(
     State(config): State<Config>,
     mut multipart: Multipart,
-) -> Result<Json<ApiResponse<crate::ocr::OcrResult>>> {
+) -> Result<Response> {
     let start_time = Instant::now();
     let request_id = uuid::Uuid::new_v4().to_string();
     
@@ -240,7 +244,7 @@ pub async fn ocr_upload_handler(
     // 执行OCR处理
     let result = OcrPipeline::process_bytes(
         image_data,
-        options,
+        options.clone(),
         if config.dev_mode { Some(status_tx) } else { None },
     ).await?;
 
@@ -253,7 +257,8 @@ pub async fn ocr_upload_handler(
         processing_time.as_secs_f32()
     );
 
-    Ok(Json(ApiResponse::success(result)))
+    // 根据输出格式返回不同的响应
+    create_response(result, options.output_format.as_deref())
 }
 
 /// 批处理上传处理器（支持多个文件）
@@ -329,4 +334,36 @@ pub async fn ocr_batch_handler(
     );
 
     Ok(Json(ApiResponse::success(results)))
+}
+
+/// 根据输出格式创建不同的响应
+fn create_response(result: crate::ocr::OcrResult, output_format: Option<&str>) -> Result<Response> {
+    match output_format {
+        Some("text") | Some("plain") => {
+            // 返回纯文本
+            let text = ResultFormatter::extract_text_only(&result);
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(CONTENT_TYPE, "text/plain; charset=utf-8")
+                .body(Body::from(text))?)
+        }
+        Some("csv") => {
+            // 返回CSV格式
+            let csv = ResultFormatter::result_to_csv(&result);
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(CONTENT_TYPE, "text/csv; charset=utf-8")
+                .body(Body::from(csv))?)
+        }
+        _ => {
+            // 默认返回JSON格式
+            let json_response = ApiResponse::success(result);
+            let json_body = serde_json::to_string(&json_response)
+                .map_err(|e| OcrError::Internal(format!("JSON序列化失败: {}", e)))?;
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(json_body))?)
+        }
+    }
 }

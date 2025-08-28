@@ -198,6 +198,34 @@ impl ResultFormatter {
         filtered
     }
 
+    /// 从OCR结果中提取纯文本
+    pub fn extract_text_only(result: &OcrResult) -> String {
+        result.results
+            .iter()
+            .map(|r| r.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// 从OCR结果转换为CSV格式
+    pub fn result_to_csv(result: &OcrResult) -> String {
+        let mut csv = String::from("text,confidence,x1,y1,x2,y2,x3,y3,x4,y4\n");
+        
+        for item in &result.results {
+            let escaped_text = item.text.replace("\"", "\"\"");
+            let bbox = &item.bounding_box;
+            
+            csv.push_str(&format!(
+                "\"{}\",{:.4},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2}\n",
+                escaped_text, item.confidence,
+                bbox[0][0], bbox[0][1], bbox[1][0], bbox[1][1],
+                bbox[2][0], bbox[2][1], bbox[3][0], bbox[3][1]
+            ));
+        }
+        
+        csv
+    }
+
     /// 计算两个边界框的IoU（交并比）
     fn calculate_iou(box1: &[[f32; 2]], box2: &[[f32; 2]]) -> f32 {
         if box1.len() != 4 || box2.len() != 4 {

@@ -124,10 +124,17 @@ impl OcrPipeline {
 
             match get_classifier()? {
                 Some(classifier) => {
-                    classifier.classify(cropped_images)?
-                        .into_iter()
-                        .map(|(img, _)| img) // 忽略角度信息，使用校正后的图像
-                        .collect()
+                    let classification_results = classifier.classify(cropped_images)?;
+                    let mut corrected_images = Vec::with_capacity(classification_results.len());
+                    
+                    for (corrected_image, angle) in classification_results {
+                        if angle.abs() > 1.0 {
+                            tracing::debug!("Corrected text angle: {:.1}°", angle);
+                        }
+                        corrected_images.push(corrected_image);
+                    }
+                    
+                    corrected_images
                 }
                 None => {
                     tracing::warn!("Angle classifier not available, skipping classification");
