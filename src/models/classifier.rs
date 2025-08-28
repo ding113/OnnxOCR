@@ -4,10 +4,11 @@ use ndarray::Array3;
 use ort::{
     session::{builder::GraphOptimizationLevel, Session},
 };
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub struct Classifier {
-    session: Arc<Session>,
+    session: Arc<Mutex<Session>>,
     input_size: (usize, usize, usize), // (C, H, W)
     thresh: f32,
 }
@@ -30,7 +31,7 @@ impl Classifier {
             .commit_from_file(&model_path)?;
 
         Ok(Self {
-            session: Arc::new(session),
+            session: Arc::new(Mutex::new(session)),
             input_size: (3, 48, 192), // PPOCRv4 分类器默认输入尺寸
             thresh: 0.9,
         })

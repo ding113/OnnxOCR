@@ -6,10 +6,11 @@ use ort::{
     value::Tensor,
     inputs,
 };
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub struct Detector {
-    session: Arc<Session>,
+    session: Arc<Mutex<Session>>,
     input_size: (usize, usize), // (height, width)
     thresh: f32,
     box_thresh: f32,
@@ -33,7 +34,7 @@ impl Detector {
             .with_intra_threads(config.onnx_config.intra_threads)?
             .commit_from_file(&model_path)?;
 
-        let session = Arc::new(session);
+        let session = Arc::new(Mutex::new(session));
         
         Ok(Self {
             session,
@@ -54,7 +55,10 @@ impl Detector {
         
         // 推理
         let input_tensor = Tensor::from_array(input_tensor)?;
-        let outputs = self.session.as_ref().run(inputs!["x" => input_tensor])?;
+        let outputs = {
+            let mut session = self.session.lock();
+            session.run(inputs!["x" => input_tensor])?
+        };
         let prediction = outputs["sigmoid_0.tmp_0"]
             .try_extract_array::<f32>()?;
 

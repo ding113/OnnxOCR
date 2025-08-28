@@ -80,11 +80,7 @@ async fn create_app(config: Config) -> Result<Router> {
                 .layer(TimeoutLayer::new(Duration::from_secs(config.server_config.request_timeout)))
                 .layer(CorsLayer::permissive()) // 开发环境使用宽松CORS
                 .layer(CompressionLayer::new())
-                .layer(TraceLayer::new_for_http().make_span_with(
-                    tower_http::trace::DefaultMakeSpan::new()
-                        .level(tracing::Level::INFO)
-                        .include_headers(true)
-                ))
+                .layer(TraceLayer::new_for_http()) // 使用简单的默认配置
         )
         // 传递配置到处理器
         .with_state(config);

@@ -6,11 +6,12 @@ use ort::{
     value::Tensor,
     inputs,
 };
+use parking_lot::Mutex;
 use std::fs;
 use std::sync::Arc;
 
 pub struct Recognizer {
-    session: Arc<Session>,
+    session: Arc<Mutex<Session>>,
     input_size: (usize, usize, usize), // (C, H, W)
     dict: Vec<String>,
 }
@@ -56,7 +57,7 @@ impl Recognizer {
         tracing::info!("Loaded dictionary with {} characters", dict.len());
 
         Ok(Self {
-            session: Arc::new(session),
+            session: Arc::new(Mutex::new(session)),
             input_size: (3, 48, 320), // PPOCRv5 识别器默认输入尺寸
             dict,
         })
@@ -88,7 +89,10 @@ impl Recognizer {
         
         // 推理
         let input_tensor = Tensor::from_array(input_tensor)?;
-        let outputs = self.session.as_ref().run(inputs!["x" => input_tensor])?;
+        let outputs = {
+            let mut session = self.session.lock();
+            session.run(inputs!["x" => input_tensor])?
+        };
         let predictions = outputs["softmax_2.tmp_0"]
             .try_extract_array::<f32>()?;
 
