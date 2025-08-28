@@ -32,6 +32,25 @@ struct Args {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    // 设置 panic hook
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info.location().unwrap();
+        let msg = match panic_info.payload().downcast_ref::<&'static str>() {
+            Some(s) => *s,
+            None => match panic_info.payload().downcast_ref::<String>() {
+                Some(s) => &s[..],
+                None => "Box<dyn Any>",
+            }
+        };
+        
+        tracing::error!(
+            "Panic occurred: {} at {}:{}",
+            msg,
+            location.file(),
+            location.line()
+        );
+    }));
+
     // 初始化日志系统
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -40,6 +59,9 @@ async fn main() -> Result<()> {
         )
         .with_target(false)
         .init();
+
+    // 减少 ONNX Runtime 日志噪音
+    std::env::set_var("ORT_LOG_LEVEL", "3"); // 只显示 Error 级别日志
 
     tracing::info!("Starting ONNX OCR service...");
     tracing::info!("Bind address: {}", args.bind);

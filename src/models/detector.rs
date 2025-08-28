@@ -153,7 +153,24 @@ impl Detector {
         scale_y: f32,
     ) -> Result<Vec<Vec<[f32; 2]>>> {
         let pred_shape = prediction.shape();
-        let (batch_size, height, width) = (pred_shape[0], pred_shape[1], pred_shape[2]);
+        
+        // 支持 3D 和 4D 张量
+        let (batch_size, height, width, pred_map) = if pred_shape.len() == 3 {
+            // 3D 张量: (batch, height, width)
+            let (batch_size, height, width) = (pred_shape[0], pred_shape[1], pred_shape[2]);
+            let pred_map = prediction.slice(s![0, .., ..]);
+            (batch_size, height, width, pred_map)
+        } else if pred_shape.len() == 4 {
+            // 4D 张量: (batch, channels, height, width) - 取第一个通道
+            let (batch_size, _channels, height, width) = (pred_shape[0], pred_shape[1], pred_shape[2], pred_shape[3]);
+            let pred_map = prediction.slice(s![0, 0, .., ..]);
+            (batch_size, height, width, pred_map)
+        } else {
+            return Err(OcrError::ModelCompatibility(format!(
+                "Unsupported detection output shape: {:?}. Expected 3D (batch,height,width) or 4D (batch,channels,height,width)", 
+                pred_shape
+            )));
+        };
         
         if batch_size != 1 {
             return Err(OcrError::Inference(
@@ -161,10 +178,9 @@ impl Detector {
             ));
         }
 
-        let pred_map = prediction.slice(s![0, .., ..]);
         let mut boxes = Vec::new();
 
-        // 简化的文字框提取逻辑
+        // TODO: 文字框提取逻辑
         // 在实际实现中应该使用更复杂的轮廓检测和多边形近似
         for y in 1..height-1 {
             for x in 1..width-1 {
@@ -183,11 +199,11 @@ impl Detector {
             }
         }
 
-        // 过滤重叠的框（简化版NMS）
+        // 过滤重叠的框
         self.filter_boxes(boxes)
     }
 
-    /// 简单的框过滤（生产环境需要更复杂的NMS算法）
+    /// TODO:框过滤
     fn filter_boxes(&self, mut boxes: Vec<Vec<[f32; 2]>>) -> Result<Vec<Vec<[f32; 2]>>> {
         // 按面积排序，保留较大的框
         boxes.sort_by(|a, b| {
