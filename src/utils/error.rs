@@ -110,6 +110,7 @@ impl OcrError {
             OcrError::Base64(_) => "BASE64_DECODE_ERROR",
             OcrError::ImageDecode(_) => "IMAGE_DECODE_ERROR",
             OcrError::Ort(_) => "ORT_ERROR",
+            OcrError::Http(_) => "HTTP_ERROR",
             OcrError::ModelCompatibility(_) => "MODEL_COMPATIBILITY_ERROR",
             OcrError::PanicCaught(_) => "PANIC_CAUGHT",
             OcrError::Internal(_) => "INTERNAL_ERROR",
