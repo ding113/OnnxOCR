@@ -1,0 +1,25 @@
+# FastAPI和ASGI服务器依赖 - Python 3.7兼容版本
+fastapi>=0.68.0,<0.100.0
+uvicorn[standard]>=0.15.0,<0.20.0
+gunicorn>=20.1.0,<21.0.0
+python-multipart>=0.0.5,<0.0.10
+jinja2>=2.11.3,<3.2.0
+
+# 原有依赖 - 保持版本不变，兼容Python 3.7
+flask
+opencv-python-headless==4.7.0.72
+opencv-contrib-python==4.7.0.72
+onnxruntime-gpu==1.14.1
+requests
+shapely
+pyclipper
+scikit-image
+imgaug
+lmdb
+tqdm
+numpy<2.0.0
+pymupdf
+pdf2image
+
+# 额外工具依赖 - Python 3.7兼容
+aiofiles>=0.7.0,<0.9.0

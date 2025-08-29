@@ -106,6 +106,7 @@ ocrForm.addEventListener('submit', async function(e) {
         formData.append('files', file);
     }
     formData.append('model_name', document.getElementById('modelSelect').value);
+    formData.append('output_format', 'text');
     // 保存所有图片文件的base名和File对象
     const imageFileMap = {};
     for (const file of fileInput.files) {
@@ -123,14 +124,14 @@ ocrForm.addEventListener('submit', async function(e) {
                 progressText.textContent = '正在识别文件...';
             }
         }, 300);
-        const resp = await fetch('/ocr', { method: 'POST', body: formData });
+        const resp = await fetch('/api/v2/ocr', { method: 'POST', body: formData });
         clearInterval(fakeTimer);
         progressBar.style.width = '100%';
         progressText.textContent = '识别完成';
         const data = await resp.json();
-        if (!data.success) {
+        if (data.error) {
             progressArea.style.display = 'none';
-            resultArea.innerHTML = `<div style='color:red;'>识别失败：${data.msg || ''}</div>`;
+            resultArea.innerHTML = `<div style='color:red;'>识别失败：${data.error || ''}</div>`;
             lastZipUrl = null;
             return;
         }
@@ -145,8 +146,10 @@ ocrForm.addEventListener('submit', async function(e) {
                 imgMap[base] = file;
             }
         }
-        data.results.forEach(r => {
-            const txtBase = r.filename.replace(/\.txt$/, '');
+        // 处理多文件响应格式
+        const results = data.items || data.results || [];
+        results.forEach(r => {
+            const txtBase = r.filename ? r.filename.replace(/\.txt$/, '') : '';
             const div = document.createElement('div');
             div.className = 'result-block';
             let imgHtml = '';
@@ -156,7 +159,8 @@ ocrForm.addEventListener('submit', async function(e) {
             }
             // 新增复制按钮
             const copyBtnHtml = `<button class=\"copy-btn\" title=\"复制文本\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"5\" y=\"5\" width=\"10\" height=\"12\" rx=\"2\" fill=\"#7b8cff\"/><rect x=\"3\" y=\"3\" width=\"10\" height=\"12\" rx=\"2\" stroke=\"#7b8cff\" stroke-width=\"1.5\" fill=\"none\"/></svg></button>`;
-            div.innerHTML = `${imgHtml}<div class=\"ocr-text-content\"><div style=\"display:flex;justify-content:space-between;align-items:flex-start;\"><b>${r.filename}</b>${copyBtnHtml}</div><pre>${r.content}</pre></div>`;
+            const content = r.text || r.content || 'No content available';
+            div.innerHTML = `${imgHtml}<div class=\"ocr-text-content\"><div style=\"display:flex;justify-content:space-between;align-items:flex-start;\"><b>${r.filename}</b>${copyBtnHtml}</div><pre>${content}</pre></div>`;
             resultArea.appendChild(div);
         });
         // 事件委托绑定复制按钮点击事件

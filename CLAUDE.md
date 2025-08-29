@@ -1,15 +1,12 @@
-我现在需要对服务层进行一次重构，包括：在保留web ui 的前提下，把包管理器换成uv，把flask换成现代的、高性能的api 方案，预期实现多线程、高并发、生产级、高稳定。同时，在全量兼容当前ocr接口的前提下，开发v2 api，使用form data和现代化API最佳实践，提供包括识别模型、识别置信率阈值、输出格式在内的多种参数选择，提供长连接不被打断，提供高性能高并发的新一代API。完成一个稳定、生产级的、面向未来的OCR基础服务组件。
-
 # OCR 服务层重构方案（草案）
 
 ## 目标与范围
 - 保留现有 Web UI（用户体验不变，必要时调整前端请求），升级服务层为高并发、生产级、可扩展。
-- 包管理切换为 `uv`；服务框架升级为 ASGI（FastAPI/Starlette）。
+- 服务框架升级为 ASGI（FastAPI/Starlette）。
 - 不再保持对现有 Flask 路由层的兼容，直接切换到新的 API；但“ONNX 推理层（onnxocr/*.py）”不做改动，仅做封装与复用。
 - 部署与监控从简：仅使用 Docker 构建与运行，暴露 5005；不引入数据库、反向代理、观测/遥测；仅提供完善日志与等级控制。
 
 ## 技术选型
-- 包管理：uv（快速安装与锁定，可复现）。
 - Web/API：FastAPI（ASGI，Pydantic 校验）。
 - 服务器：Uvicorn（可选启用 uvloop、httptools）；生产使用 Gunicorn+Uvicorn workers。
 - 模板与静态：Jinja2 + Starlette StaticFiles（复用 `templates/`、`static/`）。
@@ -61,24 +58,6 @@ results/             # 运行时生成
 - 开发：`httpx`, `pytest`（如添加测试）。
 - 迁移：逐步移除 `flask` 与 `gunicorn` 冲突项（gunicorn 保留）。
 
-示例 `pyproject.toml` 片段：
-```toml
-[project]
-name = "onnxocr-service"
-requires-python = ">=3.8"
-dependencies = [
-  "fastapi>=0.111",
-  "uvicorn[standard]>=0.30",
-  "gunicorn>=21",
-  "python-multipart>=0.0.9",
-  "jinja2>=3.1",
-  # existing
-  "opencv-python-headless==4.7.0.72",
-  "opencv-contrib-python==4.7.0.72",
-  "onnxruntime-gpu==1.14.1",
-  "requests","shapely","pyclipper","scikit-image","imgaug","lmdb","tqdm","numpy<2.0.0","pymupdf","pdf2image"
-]
-```
 
 ## API 设计（保留旧接口 + 新接口）
 - 旧接口（v1，兼容保留）：
@@ -251,26 +230,13 @@ curl -X POST http://localhost:5005/api/v2/ocr \
 - 不在日志中打印完整输入图像/大段 base64；不记录敏感数据。
 - 不在单进程内创建过多 ONNX 会话实例（避免内存膨胀）。
 
-## 本地开发与运行（示例）
-```bash
-# 使用 uv（需 Python3.8+）
-uv venv && . .venv/bin/activate
-uv pip install -e .
-# 运行开发服务
-uv run uvicorn app.main:app --reload --loop uvloop --http httptools --port 5005
-# 生产建议（示例）
-uv run gunicorn app.main:app \
-  -k uvicorn.workers.UvicornWorker \
-  --workers 4 --threads 2 --preload \
-  --timeout 120 --graceful-timeout 30
-```
+
 
 ## Docker 与部署建议
-- 多阶段构建，基础镜像 `python:3.11-slim`，安装 `uv`；缓存 `uv.lock` 提升构建速度。
+- 多阶段构建，基础镜像 `python:3.7-slim`
 - 容器内直接运行应用并暴露 `5005`；不依赖外部反向代理或数据库。
 - 环境变量（可选）：`WORKERS`、`THREADS`、`MAX_UPLOAD_MB`、`MODEL_POOL_SIZE`、`LOG_LEVEL`。未设置时由程序自适应推导。
-  - 启动命令（示例，未指定 workers/threads 亦可运行）：
-    - `gunicorn app.main:app -k uvicorn.workers.UvicornWorker --preload --bind 0.0.0.0:5005`
+  - 启动命令
 
 ## 验收与目标（简化）
 - 兼容性：`/ocr` 完全兼容现有输入/输出；Web UI 正常工作。
@@ -443,3 +409,5 @@ curl -X POST http://localhost:5005/api/v2/ocr \
   - 具备并发门控（Semaphore）与模型池配置；在目标硬件上完成并发自测（脚本即可），无崩溃与资源泄漏。
 - 文档同步：
   - README 与本方案同步更新；Docker 启动命令、环境变量、接口文档与 UI 使用指引齐备。
+
+记住，不得在代码中使用emoji。命令中也不可以。严格遵循上方的所有要求。
