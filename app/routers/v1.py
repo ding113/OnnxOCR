@@ -54,7 +54,10 @@ async def ocr_service(request: OCRRequest):
     try:
         # 验证请求数据
         if not request.image:
-            return {"error": "Invalid request, 'image' field is required."}, 400
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Invalid request, 'image' field is required."}
+            )
         
         # 解码base64图像
         try:
@@ -62,9 +65,17 @@ async def ocr_service(request: OCRRequest):
             image_np = np.frombuffer(image_bytes, dtype=np.uint8)
             img = cv2.imdecode(image_np, cv2.IMREAD_COLOR)
             if img is None:
-                return {"error": "Failed to decode image from base64."}, 400
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": "Failed to decode image from base64."}
+                )
+        except HTTPException:
+            raise
         except Exception as e:
-            return {"error": "Image decoding failed: {}".format(str(e))}, 400
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Image decoding failed: {}".format(str(e))}
+            )
         
         # 获取引擎管理器
         engine = get_engine_manager()
@@ -98,4 +109,7 @@ async def ocr_service(request: OCRRequest):
     except Exception as e:
         # 捕获所有异常并返回错误信息 - 保持与原版一致的格式
         logger.error("OCR service error: {}".format(e))
-        return {"error": "An error occurred: {}".format(str(e))}, 500
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "An error occurred: {}".format(str(e))}
+        )

@@ -2,248 +2,645 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OnnxOCR Web UI</title>
     <link rel="stylesheet" href="/static/webui.css">
 </head>
 <body>
 <div class="container">
     <h2>OnnxOCR Web UI</h2>
+    
+    <!-- 接口切换标签页 -->
+    <div class="api-tabs">
+        <button class="tab-button active" data-api="v2">V2 增强模式</button>
+        <button class="tab-button" data-api="v1">V1 兼容模式</button>
+    </div>
+    
+    <!-- 配置面板 -->
+    <div class="config-panel">
+        <!-- V2 接口配置 -->
+        <div id="v2-config" class="config-section active">
+            <div class="config-group">
+                <label for="v2-model">模型选择</label>
+                <select id="v2-model" name="model_name">
+                    <option value="PP-OCRv5">PP-OCRv5 (推荐)</option>
+                    <option value="PP-OCRv4">PP-OCRv4</option>
+                    <option value="ch_ppocr_server_v2.0">ch_ppocr_server_v2.0</option>
+                </select>
+            </div>
+            <div class="config-group">
+                <label for="v2-threshold">置信度阈值</label>
+                <input type="range" id="v2-threshold" min="0" max="1" step="0.1" value="0.5">
+                <span id="threshold-value">0.5</span>
+            </div>
+            <div class="config-group">
+                <label for="v2-format">输出格式</label>
+                <select id="v2-format">
+                    <option value="json">JSON (结构化)</option>
+                    <option value="text">纯文本</option>
+                    <option value="tsv">TSV (表格)</option>
+                    <option value="hocr">hOCR (HTML)</option>
+                </select>
+            </div>
+            <div class="config-group">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="v2-bbox" checked>
+                    <span>显示边界框坐标</span>
+                </label>
+            </div>
+            <div class="config-group">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="v2-return-image">
+                    <span>返回标注图像</span>
+                </label>
+            </div>
+        </div>
+        
+        <!-- V1 接口配置 -->
+        <div id="v1-config" class="config-section">
+            <div class="config-group">
+                <label>接口类型</label>
+                <span class="config-info">Base64 JSON (兼容原Flask接口)</span>
+            </div>
+            <div class="config-group">
+                <label>输出格式</label>
+                <span class="config-info">固定JSON格式，包含text、confidence、bounding_box</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 文件上传区域 -->
     <form id="ocrForm">
-        <div class="form-row" style="justify-content: flex-start;">
-            <label for="modelSelect">选择模型：</label>
-            <select id="modelSelect" name="model_name">
-                <option value="PP-OCRv5">PP-OCRv5</option>
-                <option value="PP-OCRv4">PP-OCRv4</option>
-                <option value="ch_ppocr_server_v2.0">ch_ppocr_server_v2.0</option>
-            </select>
-            <button type="button" id="clearBtn">清除</button>
+        <div class="upload-section">
+            <div id="dropZone" class="drop-zone">
+                <div class="drop-content">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">
+                        <div>点击选择或拖拽文件到此处</div>
+                        <div class="upload-hint">支持 JPG、PNG、BMP 图片格式</div>
+                    </div>
+                </div>
+            </div>
+            <input id="fileInput" type="file" name="files" multiple accept="image/*" />
         </div>
-        <div class="form-row">
-            <div id="dropZone" class="drop-zone">点击或拖拽图片/PDF文件到此处（可多选）</div>
-            <input id="fileInput" type="file" name="files" multiple accept="image/*,.pdf" />
-        </div>
-        <div class="form-row">
+        
+        <div class="file-list-section">
             <ul id="fileList"></ul>
         </div>
-        <div class="form-row button-row">
-            <button type="submit">开始识别</button>
+        
+        <div class="action-section">
+            <button type="submit" id="recognizeBtn">开始识别</button>
+            <button type="button" id="clearBtn">清除全部</button>
         </div>
     </form>
-    <div id="previewArea"></div>
+    
+    <!-- 进度显示 -->
     <div id="progressArea">
-        <div id="progressText"></div>
-        <div class="progress-bar-bg"><div class="progress-bar" id="progressBar"></div></div>
+        <div id="progressText">准备识别...</div>
+        <div class="progress-bar-bg">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
         <div id="elapsedTime"></div>
     </div>
-    <div class="download-row">
-        <button id="downloadBtn">下载全部TXT（压缩包）</button>
+    
+    <!-- 结果展示区域 -->
+    <div id="resultArea">
+        <!-- 动态生成结果内容 -->
     </div>
-    <div id="loading">正在识别，请稍候...</div>
-    <div id="resultArea"></div>
 </div>
-<div id="globalTip" style="display:none;position:fixed;top:32px;right:32px;z-index:9999;min-width:120px;padding:12px 28px;background:#7b8cff;color:#fff;border-radius:8px;box-shadow:0 2px 8px #7b8cff22;font-size:1.08rem;transition:opacity 0.3s;opacity:0;"></div>
+
+<!-- 全局提示组件 -->
+<div id="globalTip"></div>
+
 <script>
+// 全局变量
+const apiTabs = document.querySelectorAll('.tab-button');
+const configSections = document.querySelectorAll('.config-section');
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const ocrForm = document.getElementById('ocrForm');
 const resultArea = document.getElementById('resultArea');
-const downloadBtn = document.getElementById('downloadBtn');
-const loading = document.getElementById('loading');
-const fileList = document.getElementById('fileList');
 const clearBtn = document.getElementById('clearBtn');
 const progressArea = document.getElementById('progressArea');
 const progressBar = document.getElementById('progressBar');
 const progressText = document.getElementById('progressText');
 const elapsedTime = document.getElementById('elapsedTime');
-let lastZipUrl = null;
+const fileList = document.getElementById('fileList');
+const thresholdSlider = document.getElementById('v2-threshold');
+const thresholdValue = document.getElementById('threshold-value');
 
-function updateFileList() {
-    fileList.innerHTML = '';
-    if (fileInput.files.length === 0) {
-        fileList.innerHTML = '<li style="color:#888;">未选择文件</li>';
-        return;
+let currentAPI = 'v2';
+let uploadedFiles = [];
+
+// 初始化
+document.addEventListener('DOMContentLoaded', function() {
+    initializeEventListeners();
+    updateFileList();
+});
+
+// 事件监听器初始化
+function initializeEventListeners() {
+    // API 切换标签
+    apiTabs.forEach(tab => {
+        tab.addEventListener('click', handleAPISwitch);
+    });
+    
+    // 置信度滑块
+    thresholdSlider.addEventListener('input', function() {
+        thresholdValue.textContent = this.value;
+    });
+    
+    // 文件上传
+    setupFileUpload();
+    
+    // 表单提交
+    ocrForm.addEventListener('submit', handleFormSubmit);
+    
+    // 清除按钮
+    clearBtn.addEventListener('click', clearAll);
+}
+
+// API切换处理
+function handleAPISwitch(e) {
+    const selectedAPI = e.target.dataset.api;
+    
+    // 更新标签状态
+    apiTabs.forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.api === selectedAPI);
+    });
+    
+    // 更新配置面板
+    configSections.forEach(section => {
+        section.classList.toggle('active', section.id === selectedAPI + '-config');
+    });
+    
+    currentAPI = selectedAPI;
+    
+    // 更新文件输入的multiple属性
+    if (selectedAPI === 'v1') {
+        fileInput.removeAttribute('multiple');
+        // V1模式只支持单文件，如果有多个文件则只保留第一个
+        if (uploadedFiles.length > 1) {
+            uploadedFiles = uploadedFiles.slice(0, 1);
+            updateFileList();
+        }
+    } else {
+        fileInput.setAttribute('multiple', 'multiple');
     }
-    for (const file of fileInput.files) {
-        const li = document.createElement('li');
-        li.textContent = file.name;
-        fileList.appendChild(li);
+    
+    showTip(`已切换到 ${selectedAPI.toUpperCase()} 接口模式`);
+}
+
+// 文件上传设置
+function setupFileUpload() {
+    // 拖拽事件
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropZone.addEventListener(evt, e => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+    });
+    
+    ['dragleave', 'drop'].forEach(evt => {
+        dropZone.addEventListener(evt, e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+        });
+    });
+    
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('drop', e => {
+        const files = Array.from(e.dataTransfer.files);
+        handleFileSelection(files);
+    });
+    
+    fileInput.addEventListener('change', e => {
+        const files = Array.from(e.target.files);
+        handleFileSelection(files);
+    });
+}
+
+// 文件选择处理
+function handleFileSelection(files) {
+    if (currentAPI === 'v1' && files.length > 1) {
+        showTip('V1接口只支持单文件上传', '#f87171');
+        files = files.slice(0, 1);
+    }
+    
+    // 过滤支持的文件类型
+    const supportedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp'];
+    const validFiles = files.filter(file => {
+        if (supportedTypes.includes(file.type) || 
+            file.name.toLowerCase().match(/\.(jpg|jpeg|png|bmp)$/)) {
+            return true;
+        }
+        showTip(`不支持的文件格式: ${file.name}`, '#f87171');
+        return false;
+    });
+    
+    if (validFiles.length > 0) {
+        uploadedFiles = validFiles;
+        updateFileList();
+        showTip(`已选择 ${validFiles.length} 个文件`);
     }
 }
 
-// 拖拽上传
-['dragenter','dragover'].forEach(evt => dropZone.addEventListener(evt, e => {
-    e.preventDefault();
-    dropZone.classList.add('dragover');
-}));
-['dragleave','drop'].forEach(evt => dropZone.addEventListener(evt, e => {
-    e.preventDefault();
-    dropZone.classList.remove('dragover');
-}));
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('drop', e => {
-    fileInput.files = e.dataTransfer.files;
-    updateFileList();
-});
-fileInput.addEventListener('change', updateFileList);
-
-ocrForm.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    if (!fileInput.files.length) {
-        alert('请先选择图片或PDF文件');
+// 更新文件列表显示
+function updateFileList() {
+    fileList.innerHTML = '';
+    
+    if (uploadedFiles.length === 0) {
+        fileList.innerHTML = '<li class="no-files">未选择文件</li>';
         return;
     }
-    loading.style.display = 'none'; // 立即隐藏 loading
-    resultArea.innerHTML = '';
-    downloadBtn.style.display = 'none';
-    fileList.innerHTML = '';
-    progressArea.style.display = 'flex';
-    progressBar.style.width = '0%';
-    progressText.textContent = '正在准备识别...';
-    elapsedTime.textContent = '';
+    
+    uploadedFiles.forEach((file, index) => {
+        const li = document.createElement('li');
+        li.className = 'file-item';
+        li.innerHTML = `
+            <span class="file-name">${file.name}</span>
+            <span class="file-size">(${formatFileSize(file.size)})</span>
+            <button type="button" class="remove-file" onclick="removeFile(${index})">×</button>
+        `;
+        fileList.appendChild(li);
+    });
+}
+
+// 移除文件
+function removeFile(index) {
+    uploadedFiles.splice(index, 1);
+    updateFileList();
+    showTip('文件已移除');
+}
+
+// 格式化文件大小
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// 表单提交处理
+async function handleFormSubmit(e) {
+    e.preventDefault();
+    
+    if (uploadedFiles.length === 0) {
+        showTip('请先选择要识别的文件', '#f87171');
+        return;
+    }
+    
+    // 显示进度
+    showProgress(true);
     const startTime = Date.now();
-    const formData = new FormData();
-    for (const file of fileInput.files) {
-        formData.append('files', file);
-    }
-    formData.append('model_name', document.getElementById('modelSelect').value);
-    formData.append('output_format', 'text');
-    // 保存所有图片文件的base名和File对象
-    const imageFileMap = {};
-    for (const file of fileInput.files) {
-        if (file.type.startsWith('image/')) {
-            const base = file.name.replace(/\.[^.]+$/, '');
-            imageFileMap[base] = file;
-        }
-    }
+    
     try {
-        let fakeProgress = 0;
-        const fakeTimer = setInterval(() => {
-            if (fakeProgress < 80) {
-                fakeProgress += Math.random() * 8 + 2;
-                progressBar.style.width = Math.min(fakeProgress, 80) + '%';
-                progressText.textContent = '正在识别文件...';
-            }
-        }, 300);
-        const resp = await fetch('/api/v2/ocr', { method: 'POST', body: formData });
-        clearInterval(fakeTimer);
-        progressBar.style.width = '100%';
-        progressText.textContent = '识别完成';
-        const data = await resp.json();
-        if (data.error) {
-            progressArea.style.display = 'none';
-            resultArea.innerHTML = `<div style='color:red;'>识别失败：${data.error || ''}</div>`;
-            lastZipUrl = null;
-            return;
+        let result;
+        if (currentAPI === 'v1') {
+            result = await processWithV1API();
+        } else {
+            result = await processWithV2API();
         }
-        // 多图片多结果展示
-        previewArea.innerHTML = '';
-        resultArea.innerHTML = '';
-        // 构建图片base名到File对象的映射
-        const imgMap = {};
-        for (const file of fileInput.files) {
-            if (file.type.startsWith('image/')) {
-                const base = file.name.replace(/\.[^.]+$/, '');
-                imgMap[base] = file;
-            }
+        
+        // 显示结果
+        displayResults(result);
+        
+        const processingTime = ((Date.now() - startTime) / 1000).toFixed(2);
+        elapsedTime.textContent = `总耗时: ${processingTime} 秒`;
+        
+    } catch (error) {
+        console.error('OCR处理失败:', error);
+        let errorMessage = '识别失败';
+        if (error.message.includes('Failed to fetch')) {
+            errorMessage = '网络连接失败，请检查服务器状态';
+        } else if (error.message.includes('HTTP 413')) {
+            errorMessage = '文件过大，请选择较小的文件';
+        } else if (error.message.includes('HTTP 415')) {
+            errorMessage = '不支持的文件类型';
+        } else if (error.message.includes('HTTP 500')) {
+            errorMessage = '服务器内部错误，请稍后重试';
+        } else {
+            errorMessage += ': ' + error.message;
         }
-        // 处理多文件响应格式
-        const results = data.items || data.results || [];
-        results.forEach(r => {
-            const txtBase = r.filename ? r.filename.replace(/\.txt$/, '') : '';
-            const div = document.createElement('div');
-            div.className = 'result-block';
-            let imgHtml = '';
-            if (imgMap[txtBase]) {
-                const url = URL.createObjectURL(imgMap[txtBase]);
-                imgHtml = `<img class=\"ocr-image-preview\" src=\"${url}\" alt=\"${r.filename}\">`;
-            }
-            // 新增复制按钮
-            const copyBtnHtml = `<button class=\"copy-btn\" title=\"复制文本\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 20 20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"5\" y=\"5\" width=\"10\" height=\"12\" rx=\"2\" fill=\"#7b8cff\"/><rect x=\"3\" y=\"3\" width=\"10\" height=\"12\" rx=\"2\" stroke=\"#7b8cff\" stroke-width=\"1.5\" fill=\"none\"/></svg></button>`;
-            const content = r.text || r.content || 'No content available';
-            div.innerHTML = `${imgHtml}<div class=\"ocr-text-content\"><div style=\"display:flex;justify-content:space-between;align-items:flex-start;\"><b>${r.filename}</b>${copyBtnHtml}</div><pre>${content}</pre></div>`;
-            resultArea.appendChild(div);
-        });
-        // 事件委托绑定复制按钮点击事件
-        resultArea.addEventListener('click', function(e) {
-            if (e.target.closest('.copy-btn')) {
-                const btn = e.target.closest('.copy-btn');
-                const pre = btn.closest('.ocr-text-content').querySelector('pre');
-                if (pre) {
-                    navigator.clipboard.writeText(pre.textContent).then(() => {
-                        showTip('复制成功');
-                    }).catch(() => {
-                        showTip('复制失败，请手动复制', '#f87171');
-                    });
-                }
-            }
-        });
-        const used = ((Date.now() - startTime) / 1000).toFixed(2);
-        elapsedTime.textContent = `识别总耗时：${used} 秒`;
-        downloadBtn.style.display = 'inline-block';
-        lastZipUrl = data.zip_url || null;
-    } catch (err) {
-        progressArea.style.display = 'none';
-        resultArea.innerHTML = `<div style='color:red;'>请求失败：${err}</div>`;
+        showTip(errorMessage, '#f87171');
+        resultArea.innerHTML = `<div class="error-message">${errorMessage}</div>`;
+    } finally {
+        showProgress(false);
     }
-});
+}
 
-downloadBtn.addEventListener('click', function() {
-    if (lastZipUrl) {
-        // 采用 a 标签下载，兼容所有浏览器
-        const a = document.createElement('a');
-        a.href = lastZipUrl;
-        a.download = '';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+// V1 API 处理
+async function processWithV1API() {
+    const file = uploadedFiles[0];
+    const base64Data = await fileToBase64(file);
+    
+    progressText.textContent = '使用V1接口识别中...';
+    progressBar.style.width = '50%';
+    
+    const response = await fetch('/ocr', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            image: base64Data.split(',')[1] // 移除data:image/jpeg;base64,前缀
+        })
+    });
+    
+    progressBar.style.width = '100%';
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const result = await response.json();
+    if (result.error) {
+        throw new Error(result.error);
+    }
+    
+    return {
+        api: 'v1',
+        single: true,
+        data: result,
+        file: file
+    };
+}
+
+// V2 API 处理
+async function processWithV2API() {
+    const formData = new FormData();
+    
+    // 添加文件
+    uploadedFiles.forEach(file => {
+        formData.append('files', file);
+    });
+    
+    // 添加配置参数
+    formData.append('model_name', document.getElementById('v2-model').value);
+    formData.append('conf_threshold', document.getElementById('v2-threshold').value);
+    formData.append('output_format', document.getElementById('v2-format').value);
+    formData.append('bbox', document.getElementById('v2-bbox').checked);
+    formData.append('return_image', document.getElementById('v2-return-image').checked);
+    
+    progressText.textContent = '使用V2接口识别中...';
+    progressBar.style.width = '50%';
+    
+    const response = await fetch('/api/v2/ocr', {
+        method: 'POST',
+        body: formData
+    });
+    
+    progressBar.style.width = '100%';
+    
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const result = await response.json();
+    if (result.error) {
+        throw new Error(result.error);
+    }
+    
+    return {
+        api: 'v2',
+        single: uploadedFiles.length === 1,
+        data: result,
+        files: uploadedFiles
+    };
+}
+
+// 显示处理结果
+function displayResults(result) {
+    resultArea.innerHTML = '';
+    
+    if (result.api === 'v1' || result.single) {
+        // 单文件结果展示
+        displaySingleResult(result);
     } else {
-        alert('未找到可下载的压缩包');
+        // 多文件结果展示
+        displayMultipleResults(result);
     }
-});
+}
 
-clearBtn.addEventListener('click', function() {
-    fileInput.value = '';
+// 单文件结果展示
+function displaySingleResult(result) {
+    const container = document.createElement('div');
+    container.className = 'result-container';
+    
+    // 创建并排布局
+    const sideBySide = document.createElement('div');
+    sideBySide.className = 'side-by-side';
+    
+    // 左侧: 原图
+    const imageSection = document.createElement('div');
+    imageSection.className = 'image-section';
+    
+    const imageTitle = document.createElement('h3');
+    imageTitle.textContent = '原图';
+    imageSection.appendChild(imageTitle);
+    
+    const img = document.createElement('img');
+    img.className = 'original-image';
+    img.src = URL.createObjectURL(result.file || result.files[0]);
+    img.alt = '原图';
+    imageSection.appendChild(img);
+    
+    // 右侧: 识别结果
+    const textSection = document.createElement('div');
+    textSection.className = 'text-section';
+    
+    const textTitle = document.createElement('div');
+    textTitle.className = 'result-header';
+    textTitle.innerHTML = `
+        <h3>识别结果</h3>
+        <button class="copy-btn" onclick="copyResultText(this)">复制文本</button>
+    `;
+    textSection.appendChild(textTitle);
+    
+    const textContent = document.createElement('div');
+    textContent.className = 'text-content';
+    
+    // 根据API版本和格式显示结果
+    const resultText = formatResultText(result);
+    textContent.innerHTML = `<pre>${resultText}</pre>`;
+    textSection.appendChild(textContent);
+    
+    // 处理时间显示
+    const timeInfo = document.createElement('div');
+    timeInfo.className = 'time-info';
+    timeInfo.textContent = `处理时间: ${result.data.processing_time.toFixed(3)} 秒`;
+    textSection.appendChild(timeInfo);
+    
+    sideBySide.appendChild(imageSection);
+    sideBySide.appendChild(textSection);
+    container.appendChild(sideBySide);
+    resultArea.appendChild(container);
+}
+
+// 多文件结果展示
+function displayMultipleResults(result) {
+    const container = document.createElement('div');
+    container.className = 'multiple-results-container';
+    
+    const header = document.createElement('div');
+    header.className = 'results-header';
+    header.innerHTML = `
+        <h3>批量识别结果 (${result.data.items.length} 个文件)</h3>
+        <div class="batch-actions">
+            <button class="copy-all-btn" onclick="copyAllResults()">复制全部</button>
+        </div>
+    `;
+    container.appendChild(header);
+    
+    // 为每个文件创建结果项
+    result.data.items.forEach((item, index) => {
+        const file = result.files[index];
+        const resultItem = document.createElement('div');
+        resultItem.className = 'result-item';
+        
+        const sideBySide = document.createElement('div');
+        sideBySide.className = 'side-by-side';
+        
+        // 左侧: 原图
+        const imageSection = document.createElement('div');
+        imageSection.className = 'image-section small';
+        
+        const img = document.createElement('img');
+        img.className = 'original-image';
+        img.src = URL.createObjectURL(file);
+        img.alt = item.filename || file.name;
+        imageSection.appendChild(img);
+        
+        // 右侧: 识别结果
+        const textSection = document.createElement('div');
+        textSection.className = 'text-section';
+        
+        const textTitle = document.createElement('div');
+        textTitle.className = 'result-header';
+        textTitle.innerHTML = `
+            <h4>${item.filename || file.name}</h4>
+            <button class="copy-btn" onclick="copyResultText(this)">复制</button>
+        `;
+        textSection.appendChild(textTitle);
+        
+        const textContent = document.createElement('div');
+        textContent.className = 'text-content';
+        textContent.innerHTML = `<pre>${item.text || JSON.stringify(item.results, null, 2)}</pre>`;
+        textSection.appendChild(textContent);
+        
+        sideBySide.appendChild(imageSection);
+        sideBySide.appendChild(textSection);
+        resultItem.appendChild(sideBySide);
+        container.appendChild(resultItem);
+    });
+    
+    // 处理时间显示
+    const timeInfo = document.createElement('div');
+    timeInfo.className = 'time-info';
+    timeInfo.textContent = `总处理时间: ${result.data.processing_time.toFixed(3)} 秒`;
+    container.appendChild(timeInfo);
+    
+    resultArea.appendChild(container);
+}
+
+// 格式化结果文本
+function formatResultText(result) {
+    if (result.api === 'v1') {
+        return result.data.results.map(r => r.text).join('\n');
+    } else {
+        const format = document.getElementById('v2-format').value;
+        const data = result.data;
+        
+        switch (format) {
+            case 'text':
+                return data.text || data.results.map(r => r.text).join('\n');
+            case 'tsv':
+                return data.tsv;
+            case 'hocr':
+                return data.hocr;
+            default: // json
+                return JSON.stringify(data.results, null, 2);
+        }
+    }
+}
+
+// 文件转Base64
+function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// 显示/隐藏进度条
+function showProgress(show) {
+    if (show) {
+        progressArea.style.display = 'flex';
+        progressBar.style.width = '0%';
+        progressText.textContent = '准备识别...';
+        elapsedTime.textContent = '';
+    } else {
+        setTimeout(() => {
+            progressArea.style.display = 'none';
+        }, 1000);
+    }
+}
+
+// 清除全部
+function clearAll() {
+    uploadedFiles = [];
     updateFileList();
     resultArea.innerHTML = '';
-    downloadBtn.style.display = 'none';
-    previewArea.innerHTML = '';
-    progressArea.style.display = 'none';
-    progressBar.style.width = '0%';
-    progressText.textContent = '';
-    elapsedTime.textContent = '';
-});
+    showProgress(false);
+    showTip('已清除全部内容');
+}
 
-function showTip(msg, color = '#7b8cff') {
+// 复制结果文本
+function copyResultText(button) {
+    const textContent = button.closest('.text-section').querySelector('pre').textContent;
+    navigator.clipboard.writeText(textContent).then(() => {
+        showTip('复制成功');
+        const originalText = button.textContent;
+        button.textContent = '已复制';
+        setTimeout(() => {
+            button.textContent = originalText;
+        }, 2000);
+    }).catch(() => {
+        showTip('复制失败，请手动复制', '#f87171');
+    });
+}
+
+// 复制全部结果
+function copyAllResults() {
+    const allPres = resultArea.querySelectorAll('pre');
+    const allText = Array.from(allPres).map(pre => pre.textContent).join('\n\n---\n\n');
+    
+    navigator.clipboard.writeText(allText).then(() => {
+        showTip('全部结果已复制');
+    }).catch(() => {
+        showTip('复制失败，请手动复制', '#f87171');
+    });
+}
+
+// 显示提示信息
+function showTip(message, color = '#7b8cff') {
     const tip = document.getElementById('globalTip');
-    tip.textContent = msg;
+    tip.textContent = message;
     tip.style.background = color;
     tip.style.display = 'block';
     tip.style.opacity = '1';
+    
     clearTimeout(tip._timer);
     tip._timer = setTimeout(() => {
         tip.style.opacity = '0';
-        setTimeout(() => { tip.style.display = 'none'; }, 400);
-    }, 1500);
+        setTimeout(() => {
+            tip.style.display = 'none';
+        }, 300);
+    }, 2000);
 }
 
-// 复制按钮事件绑定
-setTimeout(() => {
-    document.querySelectorAll('.copy-btn').forEach(btn => {
-        btn.onclick = function(e) {
-            const pre = btn.closest('.ocr-text-content').querySelector('pre');
-            if (pre) {
-                navigator.clipboard.writeText(pre.textContent).then(() => {
-                    btn.title = '已复制!';
-                    btn.style.background = '#e0eaff';
-                    setTimeout(() => {
-                        btn.title = '复制文本';
-                        btn.style.background = '';
-                    }, 1200);
-                });
-            }
-        };
-    });
-}, 100);
 </script>
 </body>
 </html>
