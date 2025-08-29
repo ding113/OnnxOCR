@@ -10,7 +10,8 @@ from .settings import settings
 from .logging import setup_logging, get_logger
 from .middleware import RequestIDMiddleware, AccessLogMiddleware, ExceptionHandlerMiddleware
 from .engine import get_engine_manager
-from .routers import v1, v2
+from .routers import v1
+from .routers import v2
 from .ui import router as ui_router
 
 

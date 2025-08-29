@@ -14,6 +14,8 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Background
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from enum import Enum
+import inspect
+import os
 
 from ..engine import get_engine_manager
 from ..settings import settings
@@ -150,7 +152,17 @@ async def ocr_v2(
         # 处理文件输入
         file_list = []
         if files:
-            file_list.extend(files)
+            # 兼容可能为异步生成器或非列表类型
+            try:
+                if inspect.isasyncgen(files):
+                    async for f in files:  # type: ignore[arg-type]
+                        file_list.append(f)
+                elif isinstance(files, (list, tuple)):
+                    file_list.extend(files)
+                else:
+                    file_list.append(files)  # type: ignore[arg-type]
+            except TypeError:
+                file_list.append(files)  # type: ignore[arg-type]
         if file:
             file_list.append(file)
         
@@ -161,9 +173,17 @@ async def ocr_v2(
             )
         
         # 检查文件大小
-        total_size = sum(len(await f.read()) for f in file_list)
+        total_size = 0
         for f in file_list:
-            f.file.seek(0)  # 重置文件指针
+            try:
+                cur = f.file.tell()
+                f.file.seek(0, os.SEEK_END)
+                total_size += f.file.tell()
+                f.file.seek(cur, os.SEEK_SET)
+            except Exception:
+                probe = await f.read()
+                total_size += len(probe)
+                f.file.seek(0)
         
         if total_size > settings.MAX_CONTENT_LENGTH:
             raise HTTPException(

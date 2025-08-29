@@ -57,25 +57,26 @@ class EngineManager:
             "use_gpu": settings.USE_GPU,
         }
         
-        # 根据不同模型设置特定参数 - 使用相对路径
+        # 根据不同模型设置特定参数（确保传入的是具体的ONNX文件路径）
+        # 默认（不覆盖路径）时，ONNXPaddleOcr 会使用 utils.infer_args() 中的 v5 路径
         if model_name == "PP-OCRv5":
             kwargs.update({
-                "det_model_dir": "onnxocr/models/ppocrv5/det",
-                "rec_model_dir": "onnxocr/models/ppocrv5/rec", 
-                "cls_model_dir": "onnxocr/models/ppocrv5/cls",
+                "det_model_dir": "onnxocr/models/ppocrv5/det/det.onnx",
+                "rec_model_dir": "onnxocr/models/ppocrv5/rec/rec.onnx",
+                "cls_model_dir": "onnxocr/models/ppocrv5/cls/cls.onnx",
                 "rec_char_dict_path": "onnxocr/models/ppocrv5/ppocrv5_dict.txt",
             })
         elif model_name == "PP-OCRv4":
             kwargs.update({
-                "det_model_dir": "onnxocr/models/ppocrv4/det",
-                "rec_model_dir": "onnxocr/models/ppocrv4/rec",
-                "cls_model_dir": "onnxocr/models/ppocrv4/cls",
+                "det_model_dir": "onnxocr/models/ppocrv4/det/det.onnx",
+                "rec_model_dir": "onnxocr/models/ppocrv4/rec/rec.onnx",
+                "cls_model_dir": "onnxocr/models/ppocrv4/cls/cls.onnx",
             })
         elif model_name == "ch_ppocr_server_v2.0":
+            # 注意：仓库中仅包含 det/cls 与字典，若缺少 rec 模型请按需补全
             kwargs.update({
-                "det_model_dir": "onnxocr/models/ch_ppocr_server_v2.0/det",
-                "rec_model_dir": "onnxocr/models/ch_ppocr_server_v2.0/rec",
-                "cls_model_dir": "onnxocr/models/ch_ppocr_server_v2.0/cls",
+                "det_model_dir": "onnxocr/models/ch_ppocr_server_v2.0/det/det.onnx",
+                "cls_model_dir": "onnxocr/models/ch_ppocr_server_v2.0/cls/cls.onnx",
                 "rec_char_dict_path": "onnxocr/models/ch_ppocr_server_v2.0/ppocr_keys_v1.txt",
             })
         
