@@ -9,8 +9,8 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import List
 
-from ..settings import settings
-from ..logging import get_logger
+from .settings import settings
+from .logging import get_logger
 
 logger = get_logger("app.routes.ui")
 
