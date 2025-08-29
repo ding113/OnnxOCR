@@ -70,10 +70,10 @@ def main():
         use_colors=False,
         reload=False,
         
-        # Server limits
+        # Server limits - increased for OCR processing
         limit_concurrency=1000,
         limit_max_requests=10000,
-        timeout_keep_alive=5,
+        timeout_keep_alive=300,  # Increased to 5 minutes for long OCR operations
         
         # Headers
         server_header=True,

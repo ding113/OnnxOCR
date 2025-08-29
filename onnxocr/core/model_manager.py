@@ -230,17 +230,28 @@ class SmartModelManager:
                 "Loading model",
                 model_version=model_version,
                 model_type=model_type,
-                model_path=str(model_path)
+                model_path=str(model_path),
+                model_exists=model_path.exists(),
+                model_size_mb=round(model_path.stat().st_size / 1024 / 1024, 2) if model_path.exists() else None
             )
+            
             
             start_time = time.time()
             
             # Create and initialize predictor
-            predictor = predictor_class(
-                model_path=model_path,
-                use_gpu=config.use_gpu,
-                thread_pool_size=config.thread_pool_size
-            )
+            if model_type == "rec":
+                predictor = predictor_class(
+                    model_path=model_path,
+                    model_config=model_config,  # Pass model config to recognizer
+                    use_gpu=config.use_gpu,
+                    thread_pool_size=config.thread_pool_size
+                )
+            else:
+                predictor = predictor_class(
+                    model_path=model_path,
+                    use_gpu=config.use_gpu,
+                    thread_pool_size=config.thread_pool_size
+                )
             
             await predictor.initialize()
             

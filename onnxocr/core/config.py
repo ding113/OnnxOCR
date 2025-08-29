@@ -221,7 +221,14 @@ class OCRRequest(BaseModel):
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Confidence threshold for filtering results"
+        description="Raw confidence threshold for filtering results (internal model range)"
+    )
+    
+    confidence_threshold: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="User-friendly confidence threshold (0-1 normalized range). If provided, overrides drop_score."
     )
     
     det_limit_side_len: float = Field(

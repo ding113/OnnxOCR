@@ -72,6 +72,7 @@ class AsyncOCREngine:
         
         start_time = time.time()
         
+        
         try:
             self._stats["total_requests"] += 1
             
@@ -79,11 +80,6 @@ class AsyncOCREngine:
             if self._current_model_version != model_version:
                 self._stats["model_switches"] += 1
                 self._current_model_version = model_version
-                self.logger.info(
-                    "Switching model version", 
-                    from_version=self._current_model_version,
-                    to_version=model_version
-                )
             
             # Get model sessions (det/rec/cls)
             sessions = await self.model_manager.get_model_sessions(model_version)
@@ -93,12 +89,17 @@ class AsyncOCREngine:
             
             self._last_used_sessions = sessions
             
+            
             # Step 1: Text Detection
             detection_start = time.time()
             dt_boxes, det_metadata = await detector.detect_text(image)
             detection_time = time.time() - detection_start
             
+            
             if dt_boxes is None or len(dt_boxes) == 0:
+                self.logger.debug(
+                    "[ENGINE] No text detected - returning empty result"
+                )
                 return self._create_empty_result(
                     model_version=model_version,
                     processing_time=time.time() - start_time,
@@ -134,12 +135,13 @@ class AsyncOCREngine:
             rec_results = await recognizer.recognize_text(img_crop_list)
             rec_time = time.time() - rec_start
             
-            # Step 5: Post-processing and filtering
+            
             postprocess_start = time.time()
             filtered_results = self._filter_and_format_results(
                 dt_boxes, rec_results, cls_results, drop_score
             )
             postprocess_time = time.time() - postprocess_start
+            
             
             total_time = time.time() - start_time
             

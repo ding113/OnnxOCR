@@ -4,8 +4,11 @@ Recognition postprocessing with CTC (Connectionist Temporal Classification) deco
 """
 
 import numpy as np
+import structlog
 from typing import List, Tuple, Optional, Any
 from pathlib import Path
+
+logger = structlog.get_logger()
 
 
 class CTCLabelDecode:
@@ -29,6 +32,7 @@ class CTCLabelDecode:
         self.use_space_char = use_space_char
         self.character_str = ""
         
+        
         # Load character dictionary
         if character_dict_path is not None and Path(character_dict_path).exists():
             self.character_str = self._load_char_dict(character_dict_path)
@@ -45,6 +49,14 @@ class CTCLabelDecode:
         
         # Create character-to-index mapping
         self.dict = {char: idx for idx, char in enumerate(self.character)}
+        
+        logger.info(
+            "[CTC_DECODE] CTC label decoder initialized",
+            total_characters=len(self.character),
+            character_sample=str(self.character[:15]),
+            use_space_char=self.use_space_char,
+            blank_token_idx=0
+        )
     
     def _load_char_dict(self, dict_path: str) -> str:
         """
@@ -85,6 +97,7 @@ class CTCLabelDecode:
         Returns:
             List of (text, confidence) tuples
         """
+        
         if isinstance(preds, list):
             preds = np.array(preds)
         
@@ -92,17 +105,28 @@ class CTCLabelDecode:
         if len(preds.shape) == 2:
             preds = preds.reshape(1, preds.shape[0], preds.shape[1])
         
+        
         # Apply softmax to get probabilities
         preds_prob = self._softmax(preds)
+        
         
         # Decode each sequence in the batch
         results = []
         for batch_idx in range(preds_prob.shape[0]):
             pred_prob = preds_prob[batch_idx]  # [seq_len, num_classes]
             
+            
             # CTC greedy decoding
             text, confidence = self._ctc_greedy_decode(pred_prob)
             results.append((text, confidence))
+            
+        
+        logger.info(
+            "[CTC_DECODE] CTC decoding completed",
+            batch_size=len(results),
+            successful_decodes=sum(1 for text, _ in results if text.strip()),
+            average_confidence=round(sum(conf for _, conf in results) / len(results), 4) if results else 0
+        )
         
         return results
     

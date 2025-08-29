@@ -3,6 +3,7 @@ Async ONNX prediction base class with modern Python features
 """
 
 import asyncio
+import threading
 import onnxruntime
 import structlog
 from typing import Dict, List, Optional, Any, Tuple
@@ -150,25 +151,45 @@ class AsyncPredictBase:
         if self.session is None:
             raise InferenceError("Model not initialized")
         
+        
         try:
             # Run inference in thread pool to avoid blocking event loop
+            import time
+            inference_start = time.time()
+            
             outputs = await asyncio.get_event_loop().run_in_executor(
                 self._thread_pool,
                 self._run_inference,
                 input_data
             )
             
+            inference_time = time.time() - inference_start
+            
+            
             return outputs
             
         except Exception as e:
-            self.logger.error("Inference failed", error=str(e))
+            self.logger.error("[ONNX] Inference failed", error=str(e), model_path=str(self.model_path))
             raise InferenceError(f"Prediction failed: {e}") from e
     
     def _run_inference(self, input_data: Dict[str, Any]) -> List[Any]:
         """
         Run ONNX inference (executes in thread pool)
         """
-        return self.session.run(self.output_names, input_data)
+        try:
+            result = self.session.run(self.output_names, input_data)
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(
+                "[ONNX] Raw inference execution failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                input_keys=list(input_data.keys()),
+                expected_inputs=self.input_names
+            )
+            raise
     
     async def get_model_info(self) -> Dict[str, Any]:
         """

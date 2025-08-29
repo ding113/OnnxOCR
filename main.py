@@ -1,10 +1,11 @@
 import asyncio
 import base64
 import time
+import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-import logging
 
 import cv2
 import numpy as np
@@ -19,6 +20,20 @@ from prometheus_client.exposition import make_wsgi_app
 
 from onnxocr.api import ModernONNXOCR
 from onnxocr.core import OCRRequest, OCRResponse, ModelSwitchRequest, config
+
+# [GEAR] 配置Python logging系统 (在structlog之前)
+log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.DEBUG),
+    format='%(message)s',  # structlog会处理详细格式化
+    force=True  # 强制重新配置，覆盖之前的配置
+)
+
+# 确保根logger级别正确
+root_logger = logging.getLogger()
+root_logger.setLevel(getattr(logging, log_level, logging.DEBUG))
+
+print(f"[LOGGING] Python logging configured: level={log_level}, effective_level={root_logger.level}")
 
 # [GEAR] 配置结构化日志
 structlog.configure(
@@ -67,6 +82,89 @@ MODEL_SWITCH_COUNT = Counter(
     ['from_version', 'to_version']
 )
 
+# 🎯 Confidence Normalization Functions
+def normalize_confidence(raw_confidence: float, method: str = "logarithmic_sigmoid") -> float:
+    """
+    Normalize confidence score from raw CTC output to 0-1 range
+    
+    Args:
+        raw_confidence: Raw confidence score from CTC model (can be very low like 0.0001)
+        method: Normalization method ("logarithmic_sigmoid", "sqrt", "linear")
+        
+    Returns:
+        Normalized confidence score in 0-1 range
+    """
+    import math
+    
+    # Handle edge cases
+    if raw_confidence <= 0:
+        return 0.0
+    if raw_confidence >= 1.0:
+        return 1.0
+    
+    if method == "logarithmic_sigmoid":
+        # Logarithmic mapping followed by sigmoid smoothing
+        # This works well for very low confidence scores from large vocabulary CTC models
+        log_conf = math.log10(max(raw_confidence, 1e-8))  # Avoid log(0)
+        # Map log range [-8, 0] to [0, 1] then apply sigmoid
+        normalized = (log_conf + 8.0) / 8.0  # Maps [-8, 0] to [0, 1]
+        normalized = max(0.0, min(1.0, normalized))  # Clamp to [0, 1]
+        # Apply sigmoid for smooth curve
+        sigmoid_input = (normalized - 0.5) * 6  # Scale for smooth sigmoid
+        return 1.0 / (1.0 + math.exp(-sigmoid_input))
+        
+    elif method == "sqrt":
+        # Square root normalization - good for moderately low scores
+        return math.sqrt(raw_confidence)
+        
+    elif method == "linear":
+        # Simple linear scaling - assumes scores are already reasonably distributed
+        return min(1.0, raw_confidence * 10)  # Boost low scores by 10x, cap at 1.0
+        
+    else:
+        # Default: return raw score
+        return raw_confidence
+
+def denormalize_confidence_threshold(normalized_threshold: float, method: str = "logarithmic_sigmoid") -> float:
+    """
+    Convert user-friendly confidence threshold (0-1) back to raw CTC range
+    for internal model filtering
+    
+    Args:
+        normalized_threshold: User-provided threshold in 0-1 range
+        method: Should match the normalization method used
+        
+    Returns:
+        Raw confidence threshold for internal model filtering
+    """
+    import math
+    
+    if normalized_threshold <= 0:
+        return 0.0
+    if normalized_threshold >= 1.0:
+        return 1.0
+        
+    if method == "logarithmic_sigmoid":
+        # Reverse the logarithmic_sigmoid mapping
+        # First reverse sigmoid
+        sigmoid_input = math.log(normalized_threshold / (1.0 - normalized_threshold))
+        normalized = (sigmoid_input / 6.0) + 0.5
+        normalized = max(0.0, min(1.0, normalized))
+        # Then reverse log mapping
+        log_conf = (normalized * 8.0) - 8.0
+        return math.pow(10, log_conf)
+        
+    elif method == "sqrt":
+        # Reverse square root
+        return normalized_threshold * normalized_threshold
+        
+    elif method == "linear":
+        # Reverse linear scaling
+        return normalized_threshold / 10.0
+        
+    else:
+        return normalized_threshold
+
 # 🎯 兼容性模型定义 (用于批处理等特殊用途)
 class OCRResult(BaseModel):
     """单个OCR识别结果"""
@@ -92,6 +190,18 @@ ocr_model: Optional[ModernONNXOCR] = None
 async def lifespan(app: FastAPI):
     """应用生命周期管理 - 启动和关闭时的操作"""
     global ocr_model
+    
+    # 🔍 验证日志配置
+    root_logger = logging.getLogger()
+    structlog_logger = structlog.get_logger()
+    
+    print(f"[LOGGING] Lifespan startup - Python logging level: {root_logger.level}")
+    print(f"[LOGGING] Lifespan startup - Log level name: {logging.getLevelName(root_logger.level)}")
+    
+    # 测试各级别日志输出
+    structlog_logger.debug("[LOGGING] Debug level test - this should be visible")
+    structlog_logger.info("[LOGGING] Info level test - this should be visible")
+    structlog_logger.warning("[LOGGING] Warning level test - this should be visible")
     
     # 🚀 启动时预加载现代化OCR系统
     logger.info("正在初始化现代化ONNX OCR系统...")
@@ -896,7 +1006,8 @@ async def ocr_v2_service(
     det: bool = Form(True, description="是否启用文字检测"), 
     rec: bool = Form(True, description="是否启用文字识别"),
     cls: bool = Form(True, description="是否启用角度分类"),
-    drop_score: float = Form(0.5, description="置信度阈值")
+    drop_score: float = Form(0.5, description="原始置信度阈值（内部模型范围）"),
+    confidence_threshold: Optional[float] = Form(None, description="用户友好置信度阈值 (0-1标准范围)。如提供，将覆盖drop_score参数")
 ):
     """
     🚀 V2现代化OCR接口 - 推荐使用
@@ -932,16 +1043,24 @@ async def ocr_v2_service(
         
         # 验证文件
         file_info = await validate_image_file(file)
-        logger.debug("文件验证完成", **file_info)
         
         # 处理图片
         img, image_info = await process_uploaded_image(file)
         
         validation_time = time.time() - validation_start
-        logger.debug("文件处理完成", validation_time_seconds=validation_time)
         
         # [BRAIN] 现代化OCR推理
         inference_start = time.time()
+        
+        # Handle confidence threshold parameter conversion
+        effective_drop_score = drop_score
+        if confidence_threshold is not None:
+            effective_drop_score = denormalize_confidence_threshold(confidence_threshold)
+            logger.debug(
+                "Confidence threshold conversion",
+                user_threshold=confidence_threshold,
+                internal_drop_score=effective_drop_score
+            )
         
         ocr_result = await ocr_model.ocr_async(
             image=img,
@@ -949,15 +1068,17 @@ async def ocr_v2_service(
             det=det,
             rec=rec,
             cls=cls,
-            drop_score=drop_score
+            drop_score=effective_drop_score
         )
         
         inference_time = time.time() - inference_start
         OCR_INFERENCE_TIME.labels(model_version=model_version).observe(inference_time)
         
+        
         # [CHART] 格式化结果
         format_start = time.time()
         ocr_results = []
+        
         
         if ocr_result and len(ocr_result) > 0:
             for item in ocr_result:
@@ -965,7 +1086,8 @@ async def ocr_v2_service(
                     # 处理识别结果
                     text_info = item[1]
                     text = text_info[0] if isinstance(text_info, list) else str(text_info)
-                    confidence = text_info[1] if isinstance(text_info, list) and len(text_info) > 1 else 0.0
+                    raw_confidence = text_info[1] if isinstance(text_info, list) and len(text_info) > 1 else 0.0
+                    confidence = normalize_confidence(raw_confidence)
                     
                     # 处理边界框
                     bbox = item[0] if item[0] is not None else []
@@ -978,6 +1100,7 @@ async def ocr_v2_service(
         
         format_time = time.time() - format_start
         processing_time = time.time() - start_time
+        
         
         # [CHART] 记录成功指标
         REQUEST_COUNT.labels(
@@ -1134,7 +1257,8 @@ async def batch_ocr_v2_service(
                         if len(item) >= 2 and item[1]:
                             text_info = item[1]
                             text = text_info[0] if isinstance(text_info, list) else str(text_info)
-                            confidence = text_info[1] if isinstance(text_info, list) and len(text_info) > 1 else 0.0
+                            raw_confidence = text_info[1] if isinstance(text_info, list) and len(text_info) > 1 else 0.0
+                            confidence = normalize_confidence(raw_confidence)
                             bbox = item[0] if item[0] is not None else []
                             
                             ocr_results.append(OCRResult(

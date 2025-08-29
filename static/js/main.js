@@ -357,7 +357,7 @@ class OCRWebUI {
             });
 
             xhr.open('POST', url);
-            xhr.timeout = 60000; // 60 second timeout
+            xhr.timeout = 300000; // 300 second timeout
             xhr.send(formData);
         });
     }

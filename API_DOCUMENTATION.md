@@ -135,7 +135,7 @@ def ocr_v2_recognize(image_path: str, model_version: str = "v5-server"):
             'drop_score': 0.5
         }
         
-        response = requests.post(url, files=files, data=data, timeout=30)
+        response = requests.post(url, files=files, data=data, timeout=300)
     
     if response.status_code == 200:
         result = response.json()
@@ -172,7 +172,7 @@ def ocr_v2_batch(image_paths: list, model_version: str = "v5-server"):
     }
     
     try:
-        response = requests.post(url, files=files, data=data, timeout=60)
+        response = requests.post(url, files=files, data=data, timeout=300)
         
         if response.status_code == 200:
             result = response.json()
@@ -749,7 +749,7 @@ def ocr_recognize_legacy(image_path, model_version="v5-server"):
         "cls": True
     }
     
-    response = requests.post(url, json=payload, timeout=30)
+    response = requests.post(url, json=payload, timeout=300)
     
     if response.status_code == 200:
         result = response.json()

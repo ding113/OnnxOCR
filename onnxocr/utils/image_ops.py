@@ -5,7 +5,10 @@ Image processing operations for OCR
 import base64
 import numpy as np
 import cv2
+import structlog
 from typing import Optional
+
+logger = structlog.get_logger()
 
 
 def get_rotate_crop_image(img: np.ndarray, points: np.ndarray) -> Optional[np.ndarray]:
@@ -19,22 +22,62 @@ def get_rotate_crop_image(img: np.ndarray, points: np.ndarray) -> Optional[np.nd
     Returns:
         Cropped and rotated image
     """
+    # Validate inputs
+    if img is None:
+        logger.error("[CROP] Image is None")
+        return None
+        
+    if points is None:
+        logger.error("[CROP] Points is None")
+        return None
+        
+    if len(points) != 4:
+        logger.error(
+            "[CROP] Invalid points length",
+            expected_len=4,
+            actual_len=len(points)
+        )
+        return None
+    
+    try:
+        points_array = np.array(points)
+    except Exception as e:
+        logger.error(
+            "[CROP] Failed to analyze points",
+            error=str(e),
+            points_type=type(points).__name__
+        )
+        return None
+    
     assert len(points) == 4, "shape of points must be 4*2"
     
     try:
-        img_crop_width = int(
-            max(
-                np.linalg.norm(points[0] - points[1]), 
-                np.linalg.norm(points[2] - points[3])
-            )
-        )
-        img_crop_height = int(
-            max(
-                np.linalg.norm(points[0] - points[3]), 
-                np.linalg.norm(points[1] - points[2])
-            )
-        )
+        # Calculate crop dimensions
+        side1_dist = np.linalg.norm(points[0] - points[1])
+        side2_dist = np.linalg.norm(points[2] - points[3])
+        side3_dist = np.linalg.norm(points[0] - points[3])
+        side4_dist = np.linalg.norm(points[1] - points[2])
         
+        img_crop_width = int(max(side1_dist, side2_dist))
+        img_crop_height = int(max(side3_dist, side4_dist))
+        
+        # Validate crop dimensions
+        if img_crop_width <= 0 or img_crop_height <= 0:
+            logger.error(
+                "[CROP] Invalid crop dimensions",
+                img_crop_width=img_crop_width,
+                img_crop_height=img_crop_height
+            )
+            return None
+            
+        if img_crop_width < 3 or img_crop_height < 3:
+            logger.warning(
+                "[CROP] Very small crop dimensions",
+                img_crop_width=img_crop_width,
+                img_crop_height=img_crop_height
+            )
+        
+        # Create standard points for perspective transform
         pts_std = np.float32([
             [0, 0],
             [img_crop_width, 0],
@@ -42,7 +85,20 @@ def get_rotate_crop_image(img: np.ndarray, points: np.ndarray) -> Optional[np.nd
             [0, img_crop_height],
         ])
         
-        M = cv2.getPerspectiveTransform(points, pts_std)
+        # Convert points to correct format for OpenCV
+        points_float32 = np.float32(points)
+        
+        # Get perspective transform matrix
+        M = cv2.getPerspectiveTransform(points_float32, pts_std)
+        
+        # Validate transformation matrix
+        if np.isnan(M).any() or np.isinf(M).any():
+            logger.error(
+                "[CROP] Invalid transformation matrix - contains NaN or Inf"
+            )
+            return None
+        
+        # Perform perspective warp
         dst_img = cv2.warpPerspective(
             img,
             M,
@@ -51,13 +107,30 @@ def get_rotate_crop_image(img: np.ndarray, points: np.ndarray) -> Optional[np.nd
             flags=cv2.INTER_CUBIC,
         )
         
+        if dst_img is None:
+            logger.error("[CROP] cv2.warpPerspective returned None")
+            return None
+            
+        # Check if result is valid
+        if dst_img.size == 0:
+            logger.error("[CROP] Warped image is empty")
+            return None
+            
+        # Apply rotation if needed
         dst_img_height, dst_img_width = dst_img.shape[0:2]
-        if dst_img_height * 1.0 / dst_img_width >= 1.5:
+        aspect_ratio = dst_img_height * 1.0 / dst_img_width
+        
+        if aspect_ratio >= 1.5:
             dst_img = np.rot90(dst_img)
         
         return dst_img
         
-    except Exception:
+    except Exception as e:
+        logger.error(
+            "[CROP] Exception in get_rotate_crop_image",
+            error=str(e),
+            error_type=type(e).__name__
+        )
         return None
 
 
