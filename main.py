@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import math
 import time
 import logging
 import os
@@ -20,40 +21,12 @@ from prometheus_client.exposition import make_wsgi_app
 
 from onnxocr.api import ModernONNXOCR
 from onnxocr.core import OCRRequest, OCRResponse, ModelSwitchRequest, config
+from onnxocr.core.logging_config import setup_logging, set_request_id, get_api_logger, get_performance_logger
 
-# [GEAR] 配置Python logging系统 (在structlog之前)
-log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
-logging.basicConfig(
-    level=getattr(logging, log_level, logging.DEBUG),
-    format='%(message)s',  # structlog会处理详细格式化
-    force=True  # 强制重新配置，覆盖之前的配置
-)
-
-# 确保根logger级别正确
-root_logger = logging.getLogger()
-root_logger.setLevel(getattr(logging, log_level, logging.DEBUG))
-
-print(f"[LOGGING] Python logging configured: level={log_level}, effective_level={root_logger.level}")
-
-# [GEAR] 配置结构化日志
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
-    ],
-    wrapper_class=structlog.stdlib.BoundLogger,
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    cache_logger_on_first_use=True,
-)
-
-logger = structlog.get_logger()
+# 🔧 Setup modern logging system
+logger = setup_logging()
+api_logger = get_api_logger()
+perf_logger = get_performance_logger()
 
 # [CHART] 性能监控指标 (增强版 - 支持模型版本分离)
 REQUEST_COUNT = Counter(
@@ -94,7 +67,6 @@ def normalize_confidence(raw_confidence: float, method: str = "logarithmic_sigmo
     Returns:
         Normalized confidence score in 0-1 range
     """
-    import math
     
     # Handle edge cases
     if raw_confidence <= 0:
@@ -137,7 +109,6 @@ def denormalize_confidence_threshold(normalized_threshold: float, method: str = 
     Returns:
         Raw confidence threshold for internal model filtering
     """
-    import math
     
     if normalized_threshold <= 0:
         return 0.0
@@ -677,6 +648,9 @@ async def ocr_service(request: OCRRequest):
     - **model_info**: 使用的模型信息
     - **performance_metrics**: 详细性能指标
     """
+    # 🔗 Generate and set request ID for tracking
+    request_id = set_request_id()
+    
     start_time = time.time()
     endpoint = "ocr"
     
@@ -688,13 +662,14 @@ async def ocr_service(request: OCRRequest):
             status="error", 
             model_version="unknown"
         ).inc()
-        logger.error("模型未就绪")
+        api_logger.error("模型未就绪", request_id=request_id)
         raise HTTPException(
             status_code=503, 
             detail={
                 "error": "模型未就绪",
                 "message": "OCR模型正在加载中，请稍后重试",
-                "retry_after": 30
+                "retry_after": 30,
+                "request_id": request_id
             }
         )
     
@@ -710,7 +685,7 @@ async def ocr_service(request: OCRRequest):
                 raise ValueError("图像解码失败，请检查Base64格式")
                 
             decode_time = time.time() - decode_start
-            logger.debug("图像解码完成", decode_time_seconds=decode_time)
+            api_logger.debug("图像解码完成", decode_time_seconds=decode_time, request_id=request_id)
             
         except Exception as e:
             REQUEST_COUNT.labels(
@@ -719,13 +694,14 @@ async def ocr_service(request: OCRRequest):
                 status="error", 
                 model_version=getattr(request, 'model_version', 'unknown')
             ).inc()
-            logger.error("图像解码失败", error=str(e))
+            api_logger.error("图像解码失败", error=str(e), request_id=request_id)
             raise HTTPException(
                 status_code=400, 
                 detail={
                     "error": "图像解码失败",
                     "message": f"无法解码Base64图像: {str(e)}",
-                    "hint": "请确保提供有效的Base64编码图像数据"
+                    "hint": "请确保提供有效的Base64编码图像数据",
+                    "request_id": request_id
                 }
             )
         
@@ -770,13 +746,14 @@ async def ocr_service(request: OCRRequest):
             model_version=request.model_version
         ).observe(processing_time)
         
-        logger.info(
+        perf_logger.info(
             "OCR处理完成",
             processing_time_seconds=processing_time,
             results_count=len(ocr_results),
             decode_time_seconds=decode_time,
             inference_time_seconds=inference_time,
             format_time_seconds=format_time,
+            request_id=request_id
         )
         
         return OCRResponse(
@@ -789,7 +766,8 @@ async def ocr_service(request: OCRRequest):
                 "height": int(img.shape[0]) if img is not None and len(img.shape) >= 1 else 0,
                 "channels": int(img.shape[2]) if img is not None and len(img.shape) > 2 else 1,
                 "format": "base64",
-                "size_kb": len(request.image) // 1024
+                "size_kb": len(request.image) // 1024,
+                "request_id": request_id
             },
             model_info={
                 "model_version": request.model_version,
@@ -797,13 +775,15 @@ async def ocr_service(request: OCRRequest):
                 "use_angle_cls": request.use_angle_cls,
                 "drop_score": request.drop_score,
                 "inference_engine": "ONNX Runtime 1.22.1",
-                "performance_metrics": ocr_result.get("performance_metrics", {})
+                "performance_metrics": ocr_result.get("performance_metrics", {}),
+                "request_id": request_id
             },
             performance_metrics={
                 "decode_time": decode_time,
                 "inference_time": inference_time,
                 "format_time": format_time,
-                "total_time": processing_time
+                "total_time": processing_time,
+                "request_id": request_id
             }
         )
         
@@ -818,13 +798,14 @@ async def ocr_service(request: OCRRequest):
             status="error", 
             model_version=getattr(request, 'model_version', 'unknown')
         ).inc()
-        logger.error("OCR处理异常", error=str(e), exc_info=True)
+        api_logger.error("OCR处理异常", error=str(e), request_id=request_id, exc_info=True)
         raise HTTPException(
             status_code=500, 
             detail={
                 "error": "OCR处理失败",
                 "message": f"服务器内部错误: {str(e)}",
-                "processing_time": time.time() - start_time
+                "processing_time": time.time() - start_time,
+                "request_id": request_id
             }
         )
 
