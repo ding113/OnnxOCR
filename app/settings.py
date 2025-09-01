@@ -13,13 +13,13 @@ class Settings:
     # 服务器配置
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "5005"))
-    WORKERS: int = int(os.getenv("WORKERS", min(4, multiprocessing.cpu_count() * 2)))
-    THREADS: int = int(os.getenv("THREADS", "2"))
+    WORKERS: int = int(os.getenv("WORKERS", min(16, multiprocessing.cpu_count() * 2)))  # For 96-core server
+    THREADS: int = int(os.getenv("THREADS", "8"))  # Increased for high-spec server
     
     # 模型配置
     DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "PP-OCRv5-Server")
-    MODEL_POOL_SIZE: int = int(os.getenv("MODEL_POOL_SIZE", "1"))
-    MODEL_CONCURRENCY: int = int(os.getenv("MODEL_CONCURRENCY", "1"))
+    MODEL_POOL_SIZE: int = int(os.getenv("MODEL_POOL_SIZE", "4"))  # Increased for 128GB RAM
+    MODEL_CONCURRENCY: int = int(os.getenv("MODEL_CONCURRENCY", "8"))  # Increased for 96-core server
     USE_GPU: bool = os.getenv("USE_GPU", "false").lower() == "true"
     WARMUP: bool = os.getenv("WARMUP", "true").lower() == "true"
     

@@ -2,6 +2,7 @@
 FastAPI主应用
 ASGI应用入口，挂载静态文件、路由和中间件
 """
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -11,6 +12,7 @@ from .logging import setup_logging, get_logger
 from .middleware import RequestIDMiddleware, AccessLogMiddleware, ExceptionHandlerMiddleware
 from .engine import get_engine_manager
 from .cache import get_cache_manager
+from .model_downloader import get_model_downloader
 from .routers import v1
 from .routers import v2
 from .routers import cache
@@ -25,7 +27,22 @@ async def lifespan(app: FastAPI):
     logger = get_logger("app.main")
     
     logger.info("Starting OCR Service")
-    logger.info("Configuration: {}".format(settings.__dict__))
+    logger.info("Configuration: {}".format({
+        'WORKERS': settings.WORKERS,
+        'MODEL_CONCURRENCY': settings.MODEL_CONCURRENCY,
+        'DEFAULT_MODEL': settings.DEFAULT_MODEL,
+        'CACHE_ENABLED': settings.CACHE_ENABLED,
+        'USE_GPU': settings.USE_GPU
+    }))
+    
+    # Start background PP-OCRv5-Server model download
+    downloader = get_model_downloader()
+    if settings.DEFAULT_MODEL == "PP-OCRv5-Server":
+        logger.info("Starting background download of PP-OCRv5-Server model")
+        asyncio.create_task(downloader.ensure_model_available("PP-OCRv5-Server"))
+    
+    # ===== CACHE SERVICE INITIALIZATION =====
+    logger.info("=== Cache Service Initialization Status ===")
     
     # 检查缓存系统状态
     cache_manager = get_cache_manager()
@@ -33,7 +50,7 @@ async def lifespan(app: FastAPI):
         diagnostics = cache_manager.get_diagnostics()
         if diagnostics.initialization_error:
             logger.error(
-                "Cache system initialization failed",
+                "=== Cache system initialization FAILED ===",
                 extra={
                     "error": diagnostics.initialization_error,
                     "diskcache_available": diagnostics.diskcache_available,
@@ -43,7 +60,7 @@ async def lifespan(app: FastAPI):
             )
         elif not cache_manager.enabled:
             logger.warning(
-                "Cache system is disabled",
+                "=== Cache system is DISABLED ===",
                 extra={
                     "diskcache_available": diagnostics.diskcache_available,
                     "directory_writable": diagnostics.directory_writable
@@ -51,7 +68,7 @@ async def lifespan(app: FastAPI):
             )
         else:
             logger.info(
-                "Cache system initialized successfully",
+                "=== Cache system initialized SUCCESSFULLY ===",
                 extra={
                     "cache_dir": diagnostics.cache_dir,
                     "cache_size_mb": diagnostics.cache_size_mb,
@@ -59,7 +76,10 @@ async def lifespan(app: FastAPI):
                 }
             )
     else:
-        logger.info("Cache system is disabled by configuration")
+        logger.info("=== Cache system is DISABLED by configuration ===")
+    
+    logger.info("=== End Cache Service Initialization ===")
+    # ===== END CACHE SERVICE INITIALIZATION =====
     
     # 预热模型
     engine = get_engine_manager()
@@ -105,6 +125,22 @@ app.include_router(ui_router, tags=["web-ui"])
 async def health():
     """简单健康检查"""
     return {"status": "ok"}
+
+
+@app.get("/healthz")
+async def healthz():
+    """Kubernetes风格健康检查"""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz():
+    """就绪检查"""
+    from fastapi import HTTPException
+    engine = get_engine_manager()
+    if not engine.ready:
+        raise HTTPException(status_code=503, detail={"status": "not ready", "ready": False})
+    return {"status": "ready", "ready": True}
 
 
 if __name__ == "__main__":
