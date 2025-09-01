@@ -207,14 +207,67 @@ class EngineManager:
             # 创建一个小的测试图像
             test_img = np.zeros((64, 64, 3), dtype=np.uint8)
             
-            # 使用异步方式获取模型
-            model = asyncio.run(self.get_model(self.default_model))
+            # 使用同步方式获取模型，避免事件循环问题
+            try:
+                # 尝试获取当前事件循环
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 如果在运行中的事件循环中，使用同步方式
+                    model = self._get_model_sync(self.default_model)
+                else:
+                    # 如果没有运行中的事件循环，使用异步方式
+                    model = asyncio.run(self.get_model(self.default_model))
+            except RuntimeError:
+                # 如果获取事件循环失败，使用同步方式
+                model = self._get_model_sync(self.default_model)
+            
             model.ocr(test_img)
             self._ready = True
             logger.info("Model warmup completed")
         except Exception as e:
             logger.error("Model warmup failed: {}".format(e))
             self._ready = False
+    
+    def _get_model_sync(self, model_name: str) -> ONNXPaddleOcr:
+        """同步获取模型实例（用于预热）"""
+        model_name = model_name or self.default_model
+        
+        # 对于预热，如果server版本准备失败，直接回退到mobile版本
+        if model_name == "PP-OCRv5-Server":
+            try:
+                # 同步检查server模型是否可用
+                from .model_downloader import get_model_downloader
+                downloader = get_model_downloader()
+                if not downloader.is_server_model_complete():
+                    logger.warning("PP-OCRv5-Server model files not complete, falling back to PP-OCRv5 for warmup")
+                    model_name = "PP-OCRv5"
+            except Exception as e:
+                logger.error(f"Failed to check server model availability: {e}")
+                logger.warning("Falling back to PP-OCRv5 mobile version for warmup")
+                model_name = "PP-OCRv5"
+        
+        # 获取或创建模型实例
+        with self._lock:
+            if model_name not in self._models:
+                logger.info("Loading model for warmup: {}".format(model_name))
+                try:
+                    kwargs = self._get_model_kwargs(model_name)
+                    self._models[model_name] = ONNXPaddleOcr(**kwargs)
+                    logger.info("Model loaded successfully for warmup: {}".format(model_name))
+                except Exception as e:
+                    logger.error(f"Failed to load model {model_name} for warmup: {e}")
+                    # 如果是server版本加载失败，尝试加载mobile版本
+                    if model_name == "PP-OCRv5-Server":
+                        logger.warning("Failed to load PP-OCRv5-Server for warmup, falling back to PP-OCRv5")
+                        model_name = "PP-OCRv5"
+                        if model_name not in self._models:
+                            kwargs = self._get_model_kwargs(model_name)
+                            self._models[model_name] = ONNXPaddleOcr(**kwargs)
+                            logger.info("Fallback model loaded for warmup: {}".format(model_name))
+                    else:
+                        raise
+            
+            return self._models[model_name]
     
     @property
     def ready(self) -> bool:
