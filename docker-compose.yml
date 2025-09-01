@@ -8,7 +8,7 @@ services:
       - "5005:5005"
     restart: unless-stopped
     volumes:
-      - ./models:/app/onnxocr/models   # 模型文件持久化目录
+      - ./models/ppocrv5-server:/app/onnxocr/models/ppocrv5-server  # 仅挂载需要下载的server版本
       - ./cache_data:/cache_data       # 缓存数据持久化目录
       - ./results:/app/results         # OCR结果输出目录
     environment:
