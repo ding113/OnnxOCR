@@ -12,6 +12,7 @@ from onnxocr.onnx_paddleocr import ONNXPaddleOcr
 from onnxocr.ocr_images_pdfs import OCRLogic
 from .settings import settings
 from .logging import get_logger
+from .model_downloader import get_model_downloader
 
 logger = get_logger("app.engine")
 
@@ -32,6 +33,9 @@ class EngineManager:
         # 模型实例缓存
         self._models: Dict[str, ONNXPaddleOcr] = {}
         self._ocr_logic: Optional[OCRLogic] = None
+        
+        # 模型下载管理器
+        self._downloader = get_model_downloader()
         
         # 并发控制
         self._semaphore = asyncio.Semaphore(self.concurrency)
@@ -66,6 +70,13 @@ class EngineManager:
                 "cls_model_dir": "onnxocr/models/ppocrv5/cls/cls.onnx",
                 "rec_char_dict_path": "onnxocr/models/ppocrv5/ppocrv5_dict.txt",
             })
+        elif model_name == "PP-OCRv5-Server":
+            kwargs.update({
+                "det_model_dir": "onnxocr/models/ppocrv5-server/det/det.onnx",
+                "rec_model_dir": "onnxocr/models/ppocrv5-server/rec/rec.onnx",
+                "cls_model_dir": "onnxocr/models/ppocrv5-server/cls/cls.onnx",
+                "rec_char_dict_path": "onnxocr/models/ppocrv5-server/ppocrv5_dict.txt",
+            })
         elif model_name == "PP-OCRv4":
             kwargs.update({
                 "det_model_dir": "onnxocr/models/ppocrv4/det/det.onnx",
@@ -82,16 +93,42 @@ class EngineManager:
         
         return kwargs
     
-    def get_model(self, model_name: Optional[str] = None) -> ONNXPaddleOcr:
-        """获取模型实例"""
+    async def get_model(self, model_name: Optional[str] = None) -> ONNXPaddleOcr:
+        """获取模型实例，自动下载缺失的模型文件"""
         model_name = model_name or self.default_model
         
+        # 确保模型文件可用
+        try:
+            model_available = await self._downloader.ensure_model_available(model_name)
+            if not model_available and model_name == "PP-OCRv5-Server":
+                logger.warning(f"PP-OCRv5-Server model files not available, falling back to PP-OCRv5")
+                model_name = "PP-OCRv5"  # 回退到mobile版本
+        except Exception as e:
+            logger.error(f"Failed to ensure model availability for {model_name}: {e}")
+            if model_name == "PP-OCRv5-Server":
+                logger.warning("Falling back to PP-OCRv5 mobile version")
+                model_name = "PP-OCRv5"
+        
+        # 获取或创建模型实例
         with self._lock:
             if model_name not in self._models:
                 logger.info("Loading model: {}".format(model_name))
-                kwargs = self._get_model_kwargs(model_name)
-                self._models[model_name] = ONNXPaddleOcr(**kwargs)
-                logger.info("Model loaded: {}".format(model_name))
+                try:
+                    kwargs = self._get_model_kwargs(model_name)
+                    self._models[model_name] = ONNXPaddleOcr(**kwargs)
+                    logger.info("Model loaded successfully: {}".format(model_name))
+                except Exception as e:
+                    logger.error(f"Failed to load model {model_name}: {e}")
+                    # 如果是server版本加载失败，尝试加载mobile版本
+                    if model_name == "PP-OCRv5-Server":
+                        logger.warning("Failed to load PP-OCRv5-Server, falling back to PP-OCRv5")
+                        model_name = "PP-OCRv5"
+                        if model_name not in self._models:
+                            kwargs = self._get_model_kwargs(model_name)
+                            self._models[model_name] = ONNXPaddleOcr(**kwargs)
+                            logger.info("Fallback model loaded: {}".format(model_name))
+                    else:
+                        raise
             
             return self._models[model_name]
     
@@ -126,7 +163,17 @@ class EngineManager:
         conf_threshold: Optional[float] = None
     ) -> Tuple[float, List[List]]:
         """同步OCR执行"""
-        model = self.get_model(model_name)
+        # 由于get_model现在是异步的，我们需要在这里同步调用
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # 如果当前线程已经有运行中的事件循环，创建新的线程来执行
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._async_get_model(model_name))
+                model = future.result()
+        else:
+            # 如果没有运行中的事件循环，直接运行
+            model = asyncio.run(self._async_get_model(model_name))
         
         start_time = time.time()
         result = model.ocr(img)
@@ -146,6 +193,10 @@ class EngineManager:
         
         return processing_time, result
     
+    async def _async_get_model(self, model_name: Optional[str] = None) -> ONNXPaddleOcr:
+        """异步获取模型的辅助方法"""
+        return await self.get_model(model_name)
+    
     def warmup(self):
         """预热模型"""
         if not settings.WARMUP:
@@ -155,7 +206,9 @@ class EngineManager:
             logger.info("Starting model warmup")
             # 创建一个小的测试图像
             test_img = np.zeros((64, 64, 3), dtype=np.uint8)
-            model = self.get_model(self.default_model)
+            
+            # 使用异步方式获取模型
+            model = asyncio.run(self.get_model(self.default_model))
             model.ocr(test_img)
             self._ready = True
             logger.info("Model warmup completed")

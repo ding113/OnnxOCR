@@ -17,7 +17,7 @@ class Settings:
     THREADS: int = int(os.getenv("THREADS", "2"))
     
     # 模型配置
-    DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "PP-OCRv5")
+    DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "PP-OCRv5-Server")
     MODEL_POOL_SIZE: int = int(os.getenv("MODEL_POOL_SIZE", "1"))
     MODEL_CONCURRENCY: int = int(os.getenv("MODEL_CONCURRENCY", "1"))
     USE_GPU: bool = os.getenv("USE_GPU", "false").lower() == "true"

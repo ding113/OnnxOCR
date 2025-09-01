@@ -219,6 +219,7 @@ class OCRLogic:
         base_model_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "onnxocr", "models"))
         model_map = {
             "PP-OCRv5": "ppocrv5",
+            "PP-OCRv5-Server": "ppocrv5-server",  # 新增server版本
             "PP-OCRv4": "ppocrv4",
             "ch_ppocr_server_v2.0": "ch_ppocr_server_v2.0"
         }
@@ -226,7 +227,15 @@ class OCRLogic:
         model_path = os.path.join(base_model_dir, model_dir)
         det_model_dir = os.path.join(model_path, "det", "det.onnx")
         cls_model_dir = os.path.join(model_path, "cls", "cls.onnx")
-        rec_char_dict_path = os.path.join(base_model_dir, "ppocrv5", "ppocrv5_dict.txt")
+        
+        # 根据模型类型选择合适的字典文件
+        if model_name == "PP-OCRv5-Server":
+            # server版本使用自己目录下的字典文件（软链接到mobile版本）
+            rec_char_dict_path = os.path.join(model_path, "ppocrv5_dict.txt")
+        else:
+            # 其他模型统一使用ppocrv5字典
+            rec_char_dict_path = os.path.join(base_model_dir, "ppocrv5", "ppocrv5_dict.txt")
+            
         rec_model_dir = os.path.join(model_path, "rec", "rec.onnx") if os.path.exists(os.path.join(model_path, "rec", "rec.onnx")) else None
         ocr_kwargs = dict(
             use_angle_cls=True,

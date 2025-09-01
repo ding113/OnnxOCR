@@ -29,6 +29,7 @@ router = APIRouter(prefix="/api/v2")
 class ModelName(str, Enum):
     """支持的模型名称"""
     PPOCRV5 = "PP-OCRv5"
+    PPOCRV5_SERVER = "PP-OCRv5-Server"  # 新增server版本
     PPOCRV4 = "PP-OCRv4"
     CH_PPOCR_SERVER_V2 = "ch_ppocr_server_v2.0"
 
@@ -139,7 +140,7 @@ def results_to_hocr(results: List[OCRResultItem]) -> str:
 async def ocr_v2(
     files: Optional[List[UploadFile]] = File(None),
     file: Optional[UploadFile] = File(None),
-    model_name: ModelName = ModelName.PPOCRV5,
+    model_name: ModelName = ModelName.PPOCRV5_SERVER,
     conf_threshold: float = Form(0.5),
     output_format: OutputFormat = OutputFormat.JSON,
     bbox: bool = Form(True),
