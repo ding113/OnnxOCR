@@ -106,7 +106,6 @@ Content-Type: multipart/form-data
 - conf_threshold: 置信度阈值
 - output_format: 输出格式
 - bbox: 是否返回边界框
-- return_image: 是否返回处理后图像
 ```
 
 **请求参数**：
@@ -118,7 +117,6 @@ Content-Type: multipart/form-data
 | conf_threshold | float | 否 | 0.5 | 置信度阈值 (0.0-1.0) |
 | output_format | string | 否 | json | 输出格式：json/text/tsv/hocr |
 | bbox | boolean | 否 | true | 是否返回文本边界框坐标 |
-| return_image | boolean | 否 | false | 是否返回带标注的处理图像 |
 
 *注：file和files必须提供其中一个
 
@@ -132,8 +130,7 @@ Content-Type: multipart/form-data
       "confidence": 0.9999,
       "bounding_box": [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
     }
-  ],
-  "preview_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ..." // 当return_image=true时返回
+  ]
 }
 ```
 
@@ -144,13 +141,11 @@ Content-Type: multipart/form-data
   "items": [
     {
       "filename": "image1.jpg",
-      "text": "识别的文本内容",
-      "preview_image": "image1_annotated.jpg" // 当return_image=true时返回文件路径
+      "text": "识别的文本内容"
     },
     {
       "filename": "image2.jpg", 
-      "text": "识别的文本内容",
-      "preview_image": "image2_annotated.jpg"
+      "text": "识别的文本内容"
     }
   ],
   "zip_url": "/download/20241229_120000"
@@ -162,22 +157,19 @@ Content-Type: multipart/form-data
 // output_format=text (单文件)
 {
   "text": "识别的文本内容", 
-  "processing_time": 0.456,
-  "preview_image": "data:image/jpeg;base64,..." // 可选
+  "processing_time": 0.456
 }
 
 // output_format=tsv (单文件)
 {
   "tsv": "text\tconfidence\tbbox\n识别文本\t0.99\t[[...]]", 
-  "processing_time": 0.456,
-  "preview_image": "data:image/jpeg;base64,..." // 可选
+  "processing_time": 0.456
 }
 
 // output_format=hocr (单文件)
 {
   "hocr": "<?xml version=\"1.0\"?>...", 
-  "processing_time": 0.456,
-  "preview_image": "data:image/jpeg;base64,..." // 可选
+  "processing_time": 0.456
 }
 
 // 多文件支持所有格式的ZIP下载
@@ -199,8 +191,7 @@ with open('test.jpg', 'rb') as f:
         'model_name': 'PP-OCRv5-Server',
         'conf_threshold': 0.6,
         'output_format': 'json',
-        'bbox': 'true',
-        'return_image': 'true'
+        'bbox': 'true'
     }
     response = requests.post('http://localhost:5005/api/v2/ocr',
                            files=files, data=data)
@@ -222,8 +213,7 @@ curl -X POST http://localhost:5005/api/v2/ocr \
   -F "file=@test.jpg" \
   -F "model_name=PP-OCRv5-Server" \
   -F "conf_threshold=0.6" \
-  -F "output_format=json" \
-  -F "return_image=true"
+  -F "output_format=json"
 ```
 
 ### GET /api/v2/tasks/{task_id}
@@ -373,7 +363,6 @@ docker run -p 5005:5005 \
 - 新增多文件批量处理
 - 支持多种输出格式（JSON/TEXT/TSV/hOCR）
 - 所有输出格式支持文件下载和ZIP打包
-- 实现return_image功能，支持OCR结果可视化
 - 新增PP-OCRv5-Server高精度模型支持
 - 改进错误处理和日志
 - 完善Web UI，支持所有API参数

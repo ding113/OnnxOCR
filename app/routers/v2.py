@@ -8,7 +8,6 @@ import zipfile
 import tempfile
 import cv2
 import numpy as np
-import base64
 from typing import List, Optional, Union, Dict, Any
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
@@ -16,12 +15,10 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from enum import Enum
 import inspect
-import os
 
 from ..engine import get_engine_manager
 from ..settings import settings
 from ..logging import get_logger
-from onnxocr.utils import draw_ocr
 
 logger = get_logger("app.routes.v2")
 
@@ -55,7 +52,6 @@ class OCRResponse(BaseModel):
     """OCR响应 - 单文件"""
     processing_time: float
     results: List[OCRResultItem]
-    preview_image: Optional[str] = None
 
 
 class MultiFileOCRResponse(BaseModel):
@@ -138,41 +134,6 @@ def results_to_hocr(results: List[OCRResultItem]) -> str:
     return "\n".join(lines)
 
 
-def create_result_image(img: np.ndarray, results: List[OCRResultItem], conf_threshold: float = 0.5) -> str:
-    """创建OCR结果标注图像并返回base64编码"""
-    try:
-        # 提取边界框、文本和置信度
-        boxes = []
-        texts = []
-        scores = []
-        
-        for item in results:
-            if item.bounding_box and item.confidence >= conf_threshold:
-                boxes.append(item.bounding_box)
-                texts.append(item.text)
-                scores.append(item.confidence)
-        
-        # 使用draw_ocr函数绘制结果
-        if boxes:
-            result_img = draw_ocr(
-                image=img.copy(),
-                boxes=boxes,
-                txts=texts,
-                scores=scores,
-                drop_score=conf_threshold
-            )
-        else:
-            result_img = img.copy()
-        
-        # 转换为base64
-        _, img_encoded = cv2.imencode('.jpg', result_img)
-        img_base64 = base64.b64encode(img_encoded.tobytes()).decode('utf-8')
-        return "data:image/jpeg;base64," + img_base64
-        
-    except Exception as e:
-        logger.error("Failed to create result image: {}".format(e))
-        return None
-
 
 @router.post("/ocr")
 async def ocr_v2(
@@ -180,14 +141,18 @@ async def ocr_v2(
     file: Optional[UploadFile] = File(None),
     model_name: ModelName = ModelName.PPOCRV5_SERVER,
     conf_threshold: float = Form(0.5),
-    output_format: OutputFormat = OutputFormat.JSON,
-    bbox: bool = Form(True),
-    return_image: bool = Form(False)
+    output_format: str = Form("json"),
+    bbox: bool = Form(True)
 ):
     """
     OCR v2接口 - 支持multipart/form-data
     """
     try:
+        # 验证和转换output_format参数
+        valid_formats = {"json", "text", "tsv", "hocr"}
+        if output_format not in valid_formats:
+            output_format = "json"  # 使用默认值
+        
         # 处理文件输入
         file_list = []
         if files:
@@ -299,31 +264,17 @@ async def ocr_v2(
                     ))
             
             # 根据输出格式返回
-            preview_image = None
-            if return_image:
-                preview_image = create_result_image(img, ocr_results, conf_threshold)
-            
-            if output_format == OutputFormat.JSON:
+            if output_format == "json":
                 return OCRResponse(
                     processing_time=processing_time,
-                    results=ocr_results,
-                    preview_image=preview_image
+                    results=ocr_results
                 )
-            elif output_format == OutputFormat.TEXT:
-                response = {"text": results_to_text(ocr_results), "processing_time": processing_time}
-                if preview_image:
-                    response["preview_image"] = preview_image
-                return response
-            elif output_format == OutputFormat.TSV:
-                response = {"tsv": results_to_tsv(ocr_results), "processing_time": processing_time}
-                if preview_image:
-                    response["preview_image"] = preview_image
-                return response
-            elif output_format == OutputFormat.HOCR:
-                response = {"hocr": results_to_hocr(ocr_results), "processing_time": processing_time}
-                if preview_image:
-                    response["preview_image"] = preview_image
-                return response
+            elif output_format == "text":
+                return {"text": results_to_text(ocr_results), "processing_time": processing_time}
+            elif output_format == "tsv":
+                return {"tsv": results_to_tsv(ocr_results), "processing_time": processing_time}
+            elif output_format == "hocr":
+                return {"hocr": results_to_hocr(ocr_results), "processing_time": processing_time}
         
         else:
             # 多文件处理
@@ -368,29 +319,9 @@ async def ocr_v2(
                     # 根据输出格式处理和保存文件
                     base_filename = os.path.splitext(upload_file.filename)[0]
                     
-                    # 生成标注图像（如果需要）
-                    preview_image_path = None
-                    if return_image:
-                        try:
-                            result_img_data = create_result_image(img, ocr_results, conf_threshold)
-                            if result_img_data:
-                                # 保存标注图像文件
-                                img_filename = "{}_annotated.jpg".format(base_filename)
-                                img_path = os.path.join(session_dir, img_filename)
-                                
-                                # 从base64解码并保存
-                                img_data = base64.b64decode(result_img_data.split(',')[1])
-                                with open(img_path, "wb") as f:
-                                    f.write(img_data)
-                                preview_image_path = img_filename
-                        except Exception as e:
-                            logger.error("Failed to save result image for {}: {}".format(upload_file.filename, e))
-                    
-                    if output_format == OutputFormat.TEXT:
+                    if output_format == "text":
                         text_content = results_to_text(ocr_results)
                         result_item = {"filename": upload_file.filename, "text": text_content}
-                        if preview_image_path:
-                            result_item["preview_image"] = preview_image_path
                         results.append(result_item)
                         
                         # 保存文本文件
@@ -399,11 +330,9 @@ async def ocr_v2(
                         with open(txt_path, "w", encoding="utf-8") as f:
                             f.write(text_content)
                     
-                    elif output_format == OutputFormat.TSV:
+                    elif output_format == "tsv":
                         tsv_content = results_to_tsv(ocr_results)
                         result_item = {"filename": upload_file.filename, "tsv": tsv_content}
-                        if preview_image_path:
-                            result_item["preview_image"] = preview_image_path
                         results.append(result_item)
                         
                         # 保存TSV文件
@@ -412,11 +341,9 @@ async def ocr_v2(
                         with open(tsv_path, "w", encoding="utf-8") as f:
                             f.write(tsv_content)
                     
-                    elif output_format == OutputFormat.HOCR:
+                    elif output_format == "hocr":
                         hocr_content = results_to_hocr(ocr_results)
                         result_item = {"filename": upload_file.filename, "hocr": hocr_content}
-                        if preview_image_path:
-                            result_item["preview_image"] = preview_image_path
                         results.append(result_item)
                         
                         # 保存hOCR文件
@@ -427,8 +354,6 @@ async def ocr_v2(
                     
                     else:  # JSON格式
                         result_item = {"filename": upload_file.filename, "results": [r.dict() for r in ocr_results]}
-                        if preview_image_path:
-                            result_item["preview_image"] = preview_image_path
                         results.append(result_item)
                         
                         # 保存JSON文件
@@ -448,13 +373,13 @@ async def ocr_v2(
             zip_url = None
             if results:
                 # 确定文件扩展名和ZIP名称
-                if output_format == OutputFormat.TEXT:
+                if output_format == "text":
                     file_extension = ".txt"
                     zip_name = "ocr_txt_{}.zip".format(timestamp)
-                elif output_format == OutputFormat.TSV:
+                elif output_format == "tsv":
                     file_extension = ".tsv"
                     zip_name = "ocr_tsv_{}.zip".format(timestamp)
-                elif output_format == OutputFormat.HOCR:
+                elif output_format == "hocr":
                     file_extension = ".hocr"
                     zip_name = "ocr_hocr_{}.zip".format(timestamp)
                 else:  # JSON
