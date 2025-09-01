@@ -35,11 +35,14 @@ async def lifespan(app: FastAPI):
         'USE_GPU': settings.USE_GPU
     }))
     
-    # Start background PP-OCRv5-Server model download
+    # Ensure PP-OCRv5-Server model is ready before service starts
     downloader = get_model_downloader()
     if settings.DEFAULT_MODEL == "PP-OCRv5-Server":
-        logger.info("Starting background download of PP-OCRv5-Server model")
-        asyncio.create_task(downloader.ensure_model_available("PP-OCRv5-Server"))
+        logger.info("Ensuring PP-OCRv5-Server model is ready...")
+        model_ready = await downloader.ensure_model_available("PP-OCRv5-Server")
+        if not model_ready:
+            logger.error("Failed to prepare PP-OCRv5-Server model")
+            raise RuntimeError("Model preparation failed")
     
     # ===== CACHE SERVICE INITIALIZATION =====
     logger.info("=== Cache Service Initialization Status ===")

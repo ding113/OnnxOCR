@@ -8,8 +8,9 @@ services:
       - "5005:5005"
     restart: unless-stopped
     volumes:
-      - ./cache_data:/cache_data    # 缓存数据持久化目录
-      - ./results:/app/results      # OCR结果输出目录
+      - ./models:/app/onnxocr/models   # 模型文件持久化目录
+      - ./cache_data:/cache_data       # 缓存数据持久化目录
+      - ./results:/app/results         # OCR结果输出目录
     environment:
       - CACHE_ENABLED=true
       - CACHE_DIR=/cache_data
