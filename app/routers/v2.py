@@ -241,9 +241,10 @@ async def ocr_v2(
                     detail={"error": "Image processing failed: {}".format(str(e)), "code": "VALIDATION_ERROR"}
                 )
             
-            # 执行OCR
-            processing_time, result = await engine.run_ocr(
+            # 执行OCR (使用缓存版本)
+            processing_time, result = await engine.run_ocr_with_cache(
                 img, 
+                content,  # 传递原始图片字节数据用于hash
                 model_name=model_name.value, 
                 conf_threshold=conf_threshold
             )
@@ -294,9 +295,10 @@ async def ocr_v2(
                         logger.warning(f"Failed to decode image: {upload_file.filename}")
                         continue
                     
-                    # 执行OCR
-                    _, result = await engine.run_ocr(
+                    # 执行OCR (使用缓存版本)
+                    _, result = await engine.run_ocr_with_cache(
                         img,
+                        content,  # 传递原始图片字节数据用于hash
                         model_name=model_name.value,
                         conf_threshold=conf_threshold
                     )

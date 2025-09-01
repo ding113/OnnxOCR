@@ -37,9 +37,17 @@ class Settings:
     TEMPLATES_DIR: str = os.path.join(BASE_DIR, "templates")
     STATIC_DIR: str = os.path.join(BASE_DIR, "static")
     
+    # 缓存配置
+    CACHE_ENABLED: bool = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+    CACHE_DIR: str = os.getenv("CACHE_DIR", "/cache_data")
+    CACHE_SIZE_LIMIT: int = int(os.getenv("CACHE_SIZE_LIMIT_GB", "10")) * 1024**3  # 默认10GB
+    CACHE_TTL_DAYS: int = int(os.getenv("CACHE_TTL_DAYS", "90"))
+    
     # 确保目录存在
     def __init__(self):
         os.makedirs(self.RESULTS_DIR, exist_ok=True)
+        if self.CACHE_ENABLED:
+            os.makedirs(self.CACHE_DIR, exist_ok=True)
         
         # 自适应调优
         if not os.getenv("WORKERS"):

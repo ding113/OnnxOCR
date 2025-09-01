@@ -10,8 +10,10 @@ from .settings import settings
 from .logging import setup_logging, get_logger
 from .middleware import RequestIDMiddleware, AccessLogMiddleware, ExceptionHandlerMiddleware
 from .engine import get_engine_manager
+from .cache import get_cache_manager
 from .routers import v1
 from .routers import v2
+from .routers import cache
 from .ui import router as ui_router
 
 
@@ -35,6 +37,10 @@ async def lifespan(app: FastAPI):
     
     # 关闭时执行
     logger.info("Shutting down OCR Service")
+    
+    # 关闭缓存管理器
+    cache_manager = get_cache_manager()
+    cache_manager.close()
 
 
 # 创建FastAPI应用
@@ -56,6 +62,7 @@ app.mount("/static", StaticFiles(directory=settings.STATIC_DIR), name="static")
 # 注册路由
 app.include_router(v1.router, tags=["v1-compatibility"])
 app.include_router(v2.router, tags=["v2-api"])
+app.include_router(cache.router, tags=["cache-management"])
 app.include_router(ui_router, tags=["web-ui"])
 
 

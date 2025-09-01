@@ -13,6 +13,7 @@ from onnxocr.ocr_images_pdfs import OCRLogic
 from .settings import settings
 from .logging import get_logger
 from .model_downloader import get_model_downloader
+from .cache import get_cache_manager
 
 logger = get_logger("app.engine")
 
@@ -37,6 +38,9 @@ class EngineManager:
         # 模型下载管理器
         self._downloader = get_model_downloader()
         
+        # 缓存管理器
+        self._cache_manager = get_cache_manager()
+        
         # 并发控制
         self._semaphore = asyncio.Semaphore(self.concurrency)
         self._lock = threading.Lock()
@@ -51,6 +55,7 @@ class EngineManager:
                 "concurrency": self.concurrency,
                 "default_model": self.default_model,
                 "use_gpu": settings.USE_GPU,
+                "cache_enabled": settings.CACHE_ENABLED,
             }
         )
     
@@ -239,6 +244,61 @@ class EngineManager:
             result = [filtered_result]
         
         return processing_time, result
+    
+    async def run_ocr_with_cache(
+        self,
+        img: np.ndarray,
+        image_bytes: bytes,
+        model_name: Optional[str] = None,
+        conf_threshold: Optional[float] = None
+    ) -> Tuple[float, List[List]]:
+        """执行OCR识别（带缓存支持）"""
+        model_name = model_name or self.default_model
+        conf_threshold = conf_threshold or 0.5
+        
+        # 尝试从缓存获取结果
+        if settings.CACHE_ENABLED:
+            cached_result = self._cache_manager.get_cached_result(
+                image_bytes, model_name, conf_threshold
+            )
+            if cached_result:
+                logger.debug(f"Cache hit for model {model_name}")
+                return cached_result
+        
+        # 缓存未命中，执行OCR
+        async with self._semaphore:
+            # 确保模型已加载
+            if model_name not in self._models:
+                logger.info(f"Model {model_name} not in cache, loading asynchronously...")
+                await self.get_model(model_name)
+            
+            # 在线程池中执行OCR（置信度=0获取全部结果用于缓存）
+            loop = asyncio.get_event_loop()
+            processing_time, full_results = await loop.run_in_executor(
+                None, 
+                self._sync_ocr,
+                img,
+                model_name,
+                0.0  # 缓存所有结果
+            )
+            
+            # 异步写入缓存
+            if settings.CACHE_ENABLED and full_results:
+                self._cache_manager.cache_result_async(
+                    image_bytes, model_name, full_results, processing_time
+                )
+            
+            # 按用户要求的置信度过滤结果
+            if conf_threshold > 0.0 and full_results and full_results[0]:
+                filtered_result = []
+                for line in full_results[0]:
+                    if len(line) >= 2 and len(line[1]) >= 2:
+                        confidence = float(line[1][1])
+                        if confidence >= conf_threshold:
+                            filtered_result.append(line)
+                return processing_time, [filtered_result]
+            
+            return processing_time, full_results
     
     async def _async_get_model(self, model_name: Optional[str] = None) -> ONNXPaddleOcr:
         """异步获取模型的辅助方法"""
