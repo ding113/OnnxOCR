@@ -4,7 +4,7 @@ FROM python:3.7-slim
 # 设置工作目录
 WORKDIR /app
 
-# 复制新的FastAPI依赖文件
+# 复制FastAPI依赖文件
 COPY requirements-fastapi.txt .
 
 # 更换为清华大学镜像源 (避免新旧源同时使用)
@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libgl1 \
+    curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -28,7 +29,7 @@ COPY . .
 # 设置环境变量（如果需要）
 ENV PYTHONUNBUFFERED=1
 
-# 暴露服务端口（假设你的 Flask 服务运行在 5005 端口）
+# 暴露服务端口（FastAPI服务运行在5005端口）
 EXPOSE 5005
 
 # 启动 FastAPI 服务

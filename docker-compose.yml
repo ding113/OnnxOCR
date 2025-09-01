@@ -15,7 +15,7 @@ services:
       - "./data/output:/app/onnxocr/output"                    # 图片裁剪结果保存
       - "./data/logs:/app/onnxocr/log_output"                  # 应用运行日志
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5005/api/v2/readyz"]
       interval: 30s
       timeout: 10s
       retries: 3
