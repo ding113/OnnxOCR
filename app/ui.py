@@ -21,7 +21,7 @@ templates = Jinja2Templates(directory=settings.TEMPLATES_DIR)
 router = APIRouter()
 
 # 模型选项
-MODEL_OPTIONS = ["PP-OCRv5", "PP-OCRv4", "ch_ppocr_server_v2.0"]
+MODEL_OPTIONS = ["PP-OCRv5-Server", "PP-OCRv5", "PP-OCRv4", "ch_ppocr_server_v2.0"]
 
 
 @router.get("/", response_class=HTMLResponse)

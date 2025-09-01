@@ -114,7 +114,7 @@ Content-Type: multipart/form-data
 |------|------|------|--------|------|
 | file | File | 否* | - | 单个文件上传 |
 | files | List[File] | 否* | - | 多个文件上传 |
-| model_name | string | 否 | PP-OCRv5 | 模型选择：PP-OCRv5/PP-OCRv4/ch_ppocr_server_v2.0 |
+| model_name | string | 否 | PP-OCRv5-Server | 模型选择：PP-OCRv5-Server/PP-OCRv5/PP-OCRv4/ch_ppocr_server_v2.0 |
 | conf_threshold | float | 否 | 0.5 | 置信度阈值 (0.0-1.0) |
 | output_format | string | 否 | json | 输出格式：json/text/tsv/hocr |
 | bbox | boolean | 否 | true | 是否返回文本边界框坐标 |
@@ -133,7 +133,7 @@ Content-Type: multipart/form-data
       "bounding_box": [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
     }
   ],
-  "preview_image": null
+  "preview_image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ..." // 当return_image=true时返回
 }
 ```
 
@@ -144,11 +144,13 @@ Content-Type: multipart/form-data
   "items": [
     {
       "filename": "image1.jpg",
-      "text": "识别的文本内容"
+      "text": "识别的文本内容",
+      "preview_image": "image1_annotated.jpg" // 当return_image=true时返回文件路径
     },
     {
       "filename": "image2.jpg", 
-      "text": "识别的文本内容"
+      "text": "识别的文本内容",
+      "preview_image": "image2_annotated.jpg"
     }
   ],
   "zip_url": "/download/20241229_120000"
@@ -157,14 +159,33 @@ Content-Type: multipart/form-data
 
 **其他输出格式响应**:
 ```json
-// output_format=text
-{"text": "识别的文本内容", "processing_time": 0.456}
+// output_format=text (单文件)
+{
+  "text": "识别的文本内容", 
+  "processing_time": 0.456,
+  "preview_image": "data:image/jpeg;base64,..." // 可选
+}
 
-// output_format=tsv  
-{"tsv": "text\tconfidence\tbbox\n识别文本\t0.99\t[[...]]", "processing_time": 0.456}
+// output_format=tsv (单文件)
+{
+  "tsv": "text\tconfidence\tbbox\n识别文本\t0.99\t[[...]]", 
+  "processing_time": 0.456,
+  "preview_image": "data:image/jpeg;base64,..." // 可选
+}
 
-// output_format=hocr
-{"hocr": "<?xml version=\"1.0\"?>...", "processing_time": 0.456}
+// output_format=hocr (单文件)
+{
+  "hocr": "<?xml version=\"1.0\"?>...", 
+  "processing_time": 0.456,
+  "preview_image": "data:image/jpeg;base64,..." // 可选
+}
+
+// 多文件支持所有格式的ZIP下载
+{
+  "processing_time": 1.234,
+  "items": [...],
+  "zip_url": "/download/timestamp" // 对应格式：ocr_txt_timestamp.zip, ocr_tsv_timestamp.zip, ocr_hocr_timestamp.zip, ocr_json_timestamp.zip
+}
 ```
 
 **使用示例**：
@@ -175,10 +196,11 @@ import requests
 with open('test.jpg', 'rb') as f:
     files = {'file': f}
     data = {
-        'model_name': 'PP-OCRv5',
+        'model_name': 'PP-OCRv5-Server',
         'conf_threshold': 0.6,
         'output_format': 'json',
-        'bbox': 'true'
+        'bbox': 'true',
+        'return_image': 'true'
     }
     response = requests.post('http://localhost:5005/api/v2/ocr',
                            files=files, data=data)
@@ -198,9 +220,10 @@ response = requests.post('http://localhost:5005/api/v2/ocr',
 # curl示例
 curl -X POST http://localhost:5005/api/v2/ocr \
   -F "file=@test.jpg" \
-  -F "model_name=PP-OCRv5" \
+  -F "model_name=PP-OCRv5-Server" \
   -F "conf_threshold=0.6" \
-  -F "output_format=json"
+  -F "output_format=json" \
+  -F "return_image=true"
 ```
 
 ### GET /api/v2/tasks/{task_id}
@@ -306,7 +329,7 @@ HTTP/1.1 503 Service Unavailable
 | PORT | 5005 | 服务监听端口 |
 | WORKERS | auto | Gunicorn工作进程数 |
 | THREADS | 2 | 每个进程的线程数 |
-| DEFAULT_MODEL | PP-OCRv5 | 默认使用的OCR模型 |
+| DEFAULT_MODEL | PP-OCRv5-Server | 默认使用的OCR模型 |
 | MODEL_POOL_SIZE | 1 | 模型实例池大小 |
 | MODEL_CONCURRENCY | 1 | 最大并发推理数 |
 | MAX_UPLOAD_MB | 50 | 最大上传文件大小(MB) |
@@ -348,8 +371,12 @@ docker run -p 5005:5005 \
 - 重构为FastAPI架构
 - 支持v1/v2双接口
 - 新增多文件批量处理
-- 支持多种输出格式
+- 支持多种输出格式（JSON/TEXT/TSV/hOCR）
+- 所有输出格式支持文件下载和ZIP打包
+- 实现return_image功能，支持OCR结果可视化
+- 新增PP-OCRv5-Server高精度模型支持
 - 改进错误处理和日志
+- 完善Web UI，支持所有API参数
 
 ### v1.x (Flask版本)
 - 基础OCR功能
