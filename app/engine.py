@@ -103,6 +103,11 @@ class EngineManager:
         original_model_name = model_name or self.default_model
         model_name = original_model_name
         
+        # 如果模型已缓存，直接返回
+        with self._lock:
+            if model_name in self._models:
+                return self._models[model_name]
+        
         # PP-OCRv5-Server模型需要特殊处理，支持下载和重试
         if original_model_name == "PP-OCRv5-Server":
             max_retries = 2  # 最多重试2次
@@ -267,12 +272,19 @@ class EngineManager:
         
         # 缓存未命中，执行OCR
         async with self._semaphore:
+            # 确保模型在主线程中已经准备好
+            model_name = model_name or self.default_model
+            
+            # 如果请求的模型尚未加载，先在主线程中加载
+            with self._lock:
+                if model_name not in self._models:
+                    logger.info(f"Model {model_name} not in cache, loading asynchronously...")
+            
             # 确保模型已加载
             if model_name not in self._models:
-                logger.info(f"Model {model_name} not in cache, loading asynchronously...")
                 await self.get_model(model_name)
             
-            # 在线程池中执行OCR（置信度=0获取全部结果用于缓存）
+            # 现在在线程池中执行OCR（置信度=0获取全部结果用于缓存）
             loop = asyncio.get_event_loop()
             processing_time, full_results = await loop.run_in_executor(
                 None, 
@@ -314,23 +326,23 @@ class EngineManager:
             # 创建一个小的测试图像
             test_img = np.zeros((64, 64, 3), dtype=np.uint8)
             
-            # 使用异步方式获取模型，支持下载等待
-            try:
-                # 尝试获取当前事件循环
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # 如果在运行中的事件循环中，创建task异步执行
-                    task = loop.create_task(self._async_warmup_model(test_img))
-                    # 等待模型下载和预热完成，最多5分钟
-                    model = asyncio.wait_for(task, timeout=300.0)
-                    loop.run_until_complete(model)
+            # 对于PP-OCRv5-Server，先检查是否已完整，避免多进程同时下载
+            target_model = self.default_model
+            if target_model == "PP-OCRv5-Server":
+                if not self._downloader.is_server_model_complete():
+                    logger.info("PP-OCRv5-Server model not complete, warmup will use PP-OCRv5 instead")
+                    target_model = "PP-OCRv5"
                 else:
-                    # 如果没有运行中的事件循环，直接使用异步方式
-                    model = asyncio.run(self._async_warmup_model(test_img))
-            except (RuntimeError, asyncio.TimeoutError) as e:
-                logger.warning(f"Async warmup failed ({e}), falling back to sync method")
-                # 如果异步方式失败，使用同步方式
-                model = self._get_model_sync(self.default_model)
+                    logger.info("PP-OCRv5-Server model already complete")
+            
+            # 使用同步方式获取模型进行预热
+            try:
+                model = self._get_model_sync(target_model)
+                model.ocr(test_img)
+            except Exception as e:
+                logger.warning(f"Warmup failed with {target_model}, trying PP-OCRv5: {e}")
+                # 如果失败，回退到PP-OCRv5
+                model = self._get_model_sync("PP-OCRv5")
                 model.ocr(test_img)
             
             self._ready = True

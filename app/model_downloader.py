@@ -8,6 +8,8 @@ import os
 import hashlib
 import tempfile
 import shutil
+import time
+import fcntl
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 import aiohttp
@@ -42,6 +44,10 @@ class ModelDownloadManager:
         self.base_dir = Path(__file__).parent.parent / "onnxocr" / "models"
         self.server_model_dir = self.base_dir / "ppocrv5-server"
         self.mobile_model_dir = self.base_dir / "ppocrv5"
+        
+        # 锁文件路径
+        self.lock_file_path = self.server_model_dir / ".download.lock"
+        self.download_status_file = self.server_model_dir / ".downloading"
     
     async def ensure_model_available(self, model_name: str) -> bool:
         """
@@ -59,13 +65,158 @@ class ModelDownloadManager:
     
     async def _prepare_server_model(self) -> bool:
         """
-        准备PPOCRv5 Server版本模型文件
+        准备PPOCRv5 Server版本模型文件（带跨进程锁保护）
         
         Returns:
             bool: 准备是否成功
         """
         try:
             logger.info("Preparing PPOCRv5-Server model files")
+            
+            # 首先快速检查模型是否完整
+            if self.is_server_model_complete():
+                logger.info("PPOCRv5-Server model files already complete")
+                return True
+            
+            # 获取跨进程锁
+            return await self._prepare_server_model_with_lock()
+            
+        except Exception as e:
+            logger.error(f"Failed to prepare PPOCRv5-Server model: {e}")
+            return False
+    
+    async def _prepare_server_model_with_lock(self) -> bool:
+        """
+        使用文件锁确保只有一个进程下载模型
+        
+        Returns:
+            bool: 准备是否成功
+        """
+        # 确保锁文件目录存在
+        self.server_model_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 尝试获取锁，最多等待5分钟
+        lock_acquired = False
+        max_wait_time = 300  # 5分钟
+        wait_start = time.time()
+        
+        while time.time() - wait_start < max_wait_time:
+            try:
+                # 尝试获取排他锁
+                with open(self.lock_file_path, 'w') as lock_file:
+                    if os.name != 'nt':  # Unix-like systems
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    
+                    lock_acquired = True
+                    logger.info(f"Acquired download lock (PID: {os.getpid()})")
+                    
+                    # 再次检查模型是否已完整（其他进程可能已下载完成）
+                    if self.is_server_model_complete():
+                        logger.info("Model files already complete, no download needed")
+                        return True
+                    
+                    # 标记正在下载状态
+                    await self._mark_download_in_progress()
+                    
+                    # 执行下载
+                    result = await self._perform_model_download()
+                    
+                    # 清理下载状态
+                    await self._clear_download_status()
+                    
+                    return result
+                    
+            except (OSError, IOError) as e:
+                if os.name == 'nt':
+                    # Windows下使用文件存在检查作为锁机制
+                    if self.lock_file_path.exists():
+                        # 检查是否有其他进程正在下载
+                        if await self._wait_for_other_download():
+                            return True
+                        await asyncio.sleep(2)
+                        continue
+                    else:
+                        # 创建锁文件继续执行
+                        lock_acquired = True
+                        break
+                else:
+                    # Unix系统锁被占用，等待
+                    logger.info("Download lock held by another process, waiting...")
+                    await asyncio.sleep(5)
+                    
+                    # 检查其他进程是否已完成下载
+                    if self.is_server_model_complete():
+                        logger.info("Another process completed the download")
+                        return True
+        
+        if not lock_acquired:
+            logger.warning("Failed to acquire download lock within timeout, proceeding anyway")
+            
+        # 如果没有获取到锁，但模型已完整，返回成功
+        if self.is_server_model_complete():
+            return True
+        
+        logger.warning("Download lock timeout, attempting download without lock")
+        return await self._perform_model_download()
+    
+    async def _mark_download_in_progress(self):
+        """标记下载正在进行"""
+        try:
+            with open(self.download_status_file, 'w') as f:
+                f.write(f"pid={os.getpid()},start={time.time()}")
+            logger.debug("Marked download in progress")
+        except Exception as e:
+            logger.warning(f"Failed to mark download status: {e}")
+    
+    async def _clear_download_status(self):
+        """清理下载状态标记"""
+        try:
+            if self.download_status_file.exists():
+                self.download_status_file.unlink()
+            if self.lock_file_path.exists():
+                self.lock_file_path.unlink()
+            logger.debug("Cleared download status")
+        except Exception as e:
+            logger.warning(f"Failed to clear download status: {e}")
+    
+    async def _wait_for_other_download(self) -> bool:
+        """
+        等待其他进程完成下载
+        
+        Returns:
+            bool: 其他进程是否成功完成下载
+        """
+        logger.info("Waiting for another process to complete download...")
+        max_wait = 300  # 5分钟最大等待
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait:
+            await asyncio.sleep(10)  # 每10秒检查一次
+            
+            # 检查下载状态文件是否还存在
+            if not self.download_status_file.exists() and not self.lock_file_path.exists():
+                # 检查模型是否已完成
+                if self.is_server_model_complete():
+                    logger.info("Another process completed download successfully")
+                    return True
+                else:
+                    logger.warning("Another process finished but model incomplete")
+                    return False
+            
+            logger.debug("Still waiting for other process...")
+        
+        logger.warning("Timeout waiting for other process")
+        return False
+    
+    async def _perform_model_download(self) -> bool:
+        """
+        执行实际的模型下载
+        
+        Returns:
+            bool: 下载是否成功
+        """
+        try:
+            logger.info("Starting model download process")
             
             # 1. 创建目录结构
             await self._create_directory_structure()
@@ -84,7 +235,7 @@ class ModelDownloadManager:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to prepare PPOCRv5-Server model: {e}")
+            logger.error(f"Model download failed: {e}")
             return False
     
     async def _create_directory_structure(self):
