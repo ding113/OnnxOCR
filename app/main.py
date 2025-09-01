@@ -27,6 +27,40 @@ async def lifespan(app: FastAPI):
     logger.info("Starting OCR Service")
     logger.info("Configuration: {}".format(settings.__dict__))
     
+    # 检查缓存系统状态
+    cache_manager = get_cache_manager()
+    if settings.CACHE_ENABLED:
+        diagnostics = cache_manager.get_diagnostics()
+        if diagnostics.initialization_error:
+            logger.error(
+                "Cache system initialization failed",
+                extra={
+                    "error": diagnostics.initialization_error,
+                    "diskcache_available": diagnostics.diskcache_available,
+                    "directory_writable": diagnostics.directory_writable,
+                    "dependency_status": diagnostics.dependency_status
+                }
+            )
+        elif not cache_manager.enabled:
+            logger.warning(
+                "Cache system is disabled",
+                extra={
+                    "diskcache_available": diagnostics.diskcache_available,
+                    "directory_writable": diagnostics.directory_writable
+                }
+            )
+        else:
+            logger.info(
+                "Cache system initialized successfully",
+                extra={
+                    "cache_dir": diagnostics.cache_dir,
+                    "cache_size_mb": diagnostics.cache_size_mb,
+                    "total_keys": diagnostics.total_keys
+                }
+            )
+    else:
+        logger.info("Cache system is disabled by configuration")
+    
     # 预热模型
     engine = get_engine_manager()
     engine.warmup()

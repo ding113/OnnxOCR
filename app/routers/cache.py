@@ -3,12 +3,13 @@
 提供缓存统计、清理和配置管理功能
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..cache import get_cache_manager
+from ..cache.manager import CacheDiagnostics
 from ..logging import get_logger
 from ..settings import settings
 
@@ -44,6 +45,29 @@ class CacheConfigResponse(BaseModel):
     cache_dir: str
     size_limit_gb: float
     ttl_days: int
+
+
+class CacheDiagnosticsResponse(BaseModel):
+    """缓存诊断响应"""
+    enabled: bool
+    diskcache_available: bool
+    directory_writable: bool
+    initialization_error: Optional[str] = None
+    cache_dir: str
+    cache_size_mb: float
+    total_keys: int
+    dependency_status: Dict[str, str]
+
+
+class CacheHealthResponse(BaseModel):
+    """缓存健康检查响应"""
+    status: str  # healthy, unhealthy, disabled, error
+    message: Optional[str] = None
+    cache_size_mb: Optional[float] = None
+    total_keys: Optional[int] = None
+    initialization_error: Optional[str] = None
+    directory_writable: Optional[bool] = None
+    diskcache_available: Optional[bool] = None
 
 
 @router.get("/stats", response_model=CacheStatsResponse)
@@ -109,6 +133,102 @@ async def clear_cache(older_than_hours: Optional[int] = None):
         raise HTTPException(
             status_code=500,
             detail={"error": f"Failed to clear cache: {str(e)}", "code": "CACHE_CLEAR_ERROR"}
+        )
+
+
+@router.get("/diagnostics", response_model=CacheDiagnosticsResponse)
+async def get_cache_diagnostics():
+    """获取缓存系统详细诊断信息"""
+    try:
+        cache_manager = get_cache_manager()
+        diagnostics = cache_manager.get_diagnostics()
+        
+        logger.info("Cache diagnostics requested", extra={
+            "enabled": diagnostics.enabled,
+            "diskcache_available": diagnostics.diskcache_available,
+            "directory_writable": diagnostics.directory_writable,
+            "initialization_error": diagnostics.initialization_error,
+            "cache_size_mb": diagnostics.cache_size_mb,
+            "total_keys": diagnostics.total_keys
+        })
+        
+        return CacheDiagnosticsResponse(
+            enabled=diagnostics.enabled,
+            diskcache_available=diagnostics.diskcache_available,
+            directory_writable=diagnostics.directory_writable,
+            initialization_error=diagnostics.initialization_error,
+            cache_dir=diagnostics.cache_dir,
+            cache_size_mb=diagnostics.cache_size_mb,
+            total_keys=diagnostics.total_keys,
+            dependency_status=diagnostics.dependency_status
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get cache diagnostics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={"error": f"Failed to get cache diagnostics: {str(e)}", "code": "CACHE_DIAGNOSTICS_ERROR"}
+        )
+
+
+@router.get("/health", response_model=CacheHealthResponse)
+async def cache_health():
+    """检查缓存系统健康状态"""
+    try:
+        cache_manager = get_cache_manager()
+        diagnostics = cache_manager.get_diagnostics()
+        
+        # 构建健康状态响应
+        if not diagnostics.enabled:
+            return CacheHealthResponse(
+                status="disabled",
+                message="Cache is disabled by configuration",
+                diskcache_available=diagnostics.diskcache_available,
+                directory_writable=diagnostics.directory_writable
+            )
+        
+        # 检查各种条件
+        issues = []
+        
+        if not diagnostics.diskcache_available:
+            issues.append("diskcache library not available")
+        
+        if not diagnostics.directory_writable:
+            issues.append("cache directory not writable")
+            
+        if diagnostics.initialization_error:
+            issues.append(f"initialization failed: {diagnostics.initialization_error}")
+        
+        # 确定状态
+        if issues:
+            status = "unhealthy"
+            message = f"Cache issues detected: {'; '.join(issues)}"
+        else:
+            status = "healthy"
+            message = "Cache system is operating normally"
+            
+        logger.info("Cache health check completed", extra={
+            "status": status,
+            "issues": issues,
+            "cache_size_mb": diagnostics.cache_size_mb,
+            "total_keys": diagnostics.total_keys
+        })
+        
+        return CacheHealthResponse(
+            status=status,
+            message=message,
+            cache_size_mb=diagnostics.cache_size_mb,
+            total_keys=diagnostics.total_keys,
+            initialization_error=diagnostics.initialization_error,
+            directory_writable=diagnostics.directory_writable,
+            diskcache_available=diagnostics.diskcache_available
+        )
+        
+    except Exception as e:
+        logger.error(f"Cache health check failed: {e}")
+        return CacheHealthResponse(
+            status="error",
+            message=f"Health check failed: {str(e)}"
         )
 
 
