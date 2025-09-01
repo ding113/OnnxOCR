@@ -61,7 +61,7 @@ class CacheDiagnosticsResponse(BaseModel):
 
 class CacheHealthResponse(BaseModel):
     """缓存健康检查响应"""
-    status: str  # healthy, unhealthy, disabled, error
+    status: str  # healthy, unhealthy, disabled, initializing, error
     message: Optional[str] = None
     cache_size_mb: Optional[float] = None
     total_keys: Optional[int] = None
@@ -178,16 +178,24 @@ async def cache_health():
         cache_manager = get_cache_manager()
         diagnostics = cache_manager.get_diagnostics()
         
-        # 构建健康状态响应
-        if not diagnostics.enabled:
+        logger.info("Cache health check requested", extra={
+            "diagnostics_enabled": diagnostics.enabled,
+            "config_enabled": settings.CACHE_ENABLED,
+            "diskcache_available": diagnostics.diskcache_available,
+            "directory_writable": diagnostics.directory_writable,
+            "initialization_error": diagnostics.initialization_error
+        })
+        
+        # 基于配置判断基本状态
+        if not settings.CACHE_ENABLED:
             return CacheHealthResponse(
                 status="disabled",
-                message="Cache is disabled by configuration",
+                message="Cache is disabled by configuration (CACHE_ENABLED=false)",
                 diskcache_available=diagnostics.diskcache_available,
                 directory_writable=diagnostics.directory_writable
             )
         
-        # 检查各种条件
+        # 检查各种条件并收集问题
         issues = []
         
         if not diagnostics.diskcache_available:
@@ -199,33 +207,40 @@ async def cache_health():
         if diagnostics.initialization_error:
             issues.append(f"initialization failed: {diagnostics.initialization_error}")
         
-        # 确定状态
-        if issues:
-            status = "unhealthy"
-            message = f"Cache issues detected: {'; '.join(issues)}"
-        else:
+        # 基于 diagnostics.enabled 判断最终状态
+        if diagnostics.enabled:
+            # 缓存完全可用
             status = "healthy"
             message = "Cache system is operating normally"
+        elif issues:
+            # 有具体问题
+            status = "unhealthy"  
+            message = f"Cache issues detected: {'; '.join(issues)}"
+        else:
+            # 配置启用但初始化未完成（可能仍在进行中）
+            status = "initializing"
+            message = "Cache system is enabled but not yet initialized"
             
         logger.info("Cache health check completed", extra={
             "status": status,
             "issues": issues,
             "cache_size_mb": diagnostics.cache_size_mb,
-            "total_keys": diagnostics.total_keys
+            "total_keys": diagnostics.total_keys,
+            "actually_enabled": diagnostics.enabled
         })
         
         return CacheHealthResponse(
             status=status,
             message=message,
-            cache_size_mb=diagnostics.cache_size_mb,
-            total_keys=diagnostics.total_keys,
+            cache_size_mb=diagnostics.cache_size_mb if diagnostics.enabled else None,
+            total_keys=diagnostics.total_keys if diagnostics.enabled else None,
             initialization_error=diagnostics.initialization_error,
             directory_writable=diagnostics.directory_writable,
             diskcache_available=diagnostics.diskcache_available
         )
         
     except Exception as e:
-        logger.error(f"Cache health check failed: {e}")
+        logger.error(f"Cache health check failed with unexpected error: {e}", exc_info=True)
         return CacheHealthResponse(
             status="error",
             message=f"Health check failed: {str(e)}"

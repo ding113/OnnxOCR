@@ -127,16 +127,20 @@ class CacheManager:
         
         try:
             # 1. 检查依赖包
+            logger.debug("Step 1: Checking dependencies...")
             deps_status = self._check_dependencies()
             logger.info(f"Dependency check: {deps_status}")
             
-            if "MISSING" in deps_status.get("diskcache", "") or "ERROR" in deps_status.get("diskcache", ""):
+            if ("MISSING" in deps_status.get("diskcache", "") or 
+                "ERROR" in deps_status.get("diskcache", "")):
                 error_msg = f"diskcache package not available: {deps_status['diskcache']}"
                 logger.error(error_msg)
                 self._initialization_error = error_msg
+                self._initialized = False
                 return
             
             # 2. 检查目录权限
+            logger.debug("Step 2: Checking directory permissions...")
             dir_writable, dir_status = self._check_directory_permissions()
             logger.info(f"Directory check: {dir_status}")
             
@@ -144,9 +148,11 @@ class CacheManager:
                 error_msg = f"Cache directory not writable: {dir_status}"
                 logger.error(error_msg)
                 self._initialization_error = error_msg
+                self._initialized = False
                 return
             
             # 3. 初始化diskcache
+            logger.debug("Step 3: Initializing diskcache...")
             try:
                 import diskcache
                 
@@ -158,25 +164,45 @@ class CacheManager:
                     timeout=1.0,  # 避免长时间锁等待
                     disk_min_file_size=1024  # 小数据内嵌存储
                 )
+                logger.info("diskcache.Cache object created successfully")
                 
                 # 测试缓存操作
+                logger.debug("Step 3a: Testing cache operations...")
                 test_key = "__cache_test__"
-                self._cache.set(test_key, "test_value", expire=5)
+                test_value = "test_value"
+                
+                # 测试写入
+                self._cache.set(test_key, test_value, expire=5)
+                logger.debug("Cache test write: OK")
+                
+                # 测试读取
                 test_result = self._cache.get(test_key)
+                logger.debug(f"Cache test read: {test_result}")
+                
+                # 测试删除
                 self._cache.delete(test_key)
+                logger.debug("Cache test delete: OK")
                 
-                if test_result != "test_value":
-                    raise RuntimeError("Cache test operation failed")
+                if test_result != test_value:
+                    raise RuntimeError(f"Cache test operation failed: expected '{test_value}', got '{test_result}'")
                 
-                logger.info("diskcache initialized and tested successfully")
+                logger.info("diskcache operations test passed")
                 
-            except Exception as e:
-                error_msg = f"diskcache initialization failed: {e}"
+            except ImportError as e:
+                error_msg = f"Failed to import diskcache: {e}"
                 logger.error(error_msg)
                 self._initialization_error = error_msg
+                self._initialized = False
+                return
+            except Exception as e:
+                error_msg = f"diskcache initialization failed: {e}"
+                logger.error(error_msg, exc_info=True)
+                self._initialization_error = error_msg
+                self._initialized = False
                 return
             
             # 4. 初始化后台写入线程池
+            logger.debug("Step 4: Initializing thread pool...")
             try:
                 self._executor = ThreadPoolExecutor(
                     max_workers=2,
@@ -185,12 +211,15 @@ class CacheManager:
                 logger.info("Cache thread pool initialized")
             except Exception as e:
                 error_msg = f"Thread pool initialization failed: {e}"
-                logger.error(error_msg)
+                logger.error(error_msg, exc_info=True)
                 self._initialization_error = error_msg
+                self._initialized = False
                 return
             
             # 5. 成功初始化
             self._initialized = True
+            self._initialization_error = None  # 清除任何之前的错误
+            
             cache_size_mb = self.get_cache_size_mb()
             total_keys = len(self._cache) if self._cache else 0
             
@@ -205,10 +234,25 @@ class CacheManager:
             )
             
         except Exception as e:
-            error_msg = f"Cache initialization failed: {e}"
+            error_msg = f"Cache initialization failed with unexpected error: {e}"
             logger.error(error_msg, exc_info=True)
             self._initialization_error = error_msg
             self._initialized = False
+            
+            # 清理任何部分初始化的资源
+            if hasattr(self, '_cache') and self._cache:
+                try:
+                    self._cache.close()
+                except Exception:
+                    pass
+                self._cache = None
+                
+            if hasattr(self, '_executor') and self._executor:
+                try:
+                    self._executor.shutdown(wait=False)
+                except Exception:
+                    pass
+                self._executor = None
     
     @property
     def enabled(self) -> bool:
@@ -372,12 +416,37 @@ class CacheManager:
     def get_diagnostics(self) -> CacheDiagnostics:
         """获取缓存系统详细诊断信息"""
         try:
+            # 尝试初始化以获取最新状态
+            self._initialize()
+            
             deps_status = self._check_dependencies()
             dir_writable, dir_status = self._check_directory_permissions()
             
+            # 检查diskcache是否可用
+            diskcache_available = ("MISSING" not in deps_status.get("diskcache", "") and 
+                                 "ERROR" not in deps_status.get("diskcache", ""))
+            
+            # 判断缓存是否真正可用：需要配置启用、初始化成功、依赖可用
+            cache_actually_enabled = (settings.CACHE_ENABLED and 
+                                    self._initialized and 
+                                    diskcache_available and 
+                                    dir_writable)
+            
+            logger.debug(
+                "Cache diagnostics",
+                extra={
+                    "config_enabled": settings.CACHE_ENABLED,
+                    "initialized": self._initialized, 
+                    "diskcache_available": diskcache_available,
+                    "directory_writable": dir_writable,
+                    "actually_enabled": cache_actually_enabled,
+                    "initialization_error": self._initialization_error
+                }
+            )
+            
             return CacheDiagnostics(
-                enabled=settings.CACHE_ENABLED,
-                diskcache_available="MISSING" not in deps_status.get("diskcache", "") and "ERROR" not in deps_status.get("diskcache", ""),
+                enabled=cache_actually_enabled,
+                diskcache_available=diskcache_available,
                 directory_writable=dir_writable,
                 initialization_error=self._initialization_error,
                 cache_dir=settings.CACHE_DIR,
@@ -388,7 +457,7 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Failed to get cache diagnostics: {e}")
             return CacheDiagnostics(
-                enabled=settings.CACHE_ENABLED,
+                enabled=False,
                 diskcache_available=False,
                 directory_writable=False,
                 initialization_error=str(e),

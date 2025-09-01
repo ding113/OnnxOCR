@@ -33,4 +33,4 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 5005
 
 # 启动 FastAPI 服务
-CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:5005", "--workers", "4", "--threads", "2", "--preload"]
+CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:5005", "--preload"]
