@@ -1,5 +1,11 @@
 # OCR 服务层重构方案（草案）
 
+## 最新更新
+- **2025.1.2**: 完成GPU自动检测与并发8优化
+  - 默认并发8：`MODEL_CONCURRENCY=8`
+  - GPU自动检测：在`app/engine.py`中集成智能检测，失败时自动回退CPU
+  - GPU Docker支持：新增`docker-compose.gpu.yml`，一键启用GPU部署
+
 ## 目标与范围
 - 保留现有 Web UI（用户体验不变，必要时调整前端请求），升级服务层为高并发、生产级、可扩展。
 - 服务框架升级为 ASGI（FastAPI/Starlette）。

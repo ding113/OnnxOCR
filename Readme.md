@@ -152,11 +152,14 @@ docker build -t onnxocr-fastapi .
 
 #### 运行容器  
 ```bash  
+# CPU版本（默认）
+docker-compose up -d
+
+# GPU版本（自动检测，失败时回退CPU）
+docker-compose -f docker-compose.gpu.yml up -d
+
 # 基础运行
 docker run -itd --name onnxocr-service -p 5005:5005 onnxocr-fastapi
-
-# 使用docker-compose (推荐)
-docker-compose up -d
 ```  
 
 #### 环境变量配置
@@ -166,9 +169,17 @@ docker run -itd --name onnxocr-service -p 5005:5005 \
   -e THREADS=2 \
   -e LOG_LEVEL=INFO \
   -e DEFAULT_MODEL=PP-OCRv5 \
+  -e MODEL_CONCURRENCY=8 \
+  -e USE_GPU=true \
   -e MAX_UPLOAD_MB=50 \
   onnxocr-fastapi
 ```
+
+#### GPU部署要求
+- NVIDIA Docker Runtime
+- CUDA兼容GPU
+- onnxruntime-gpu==1.14.1 (已包含在requirements中)
+- 自动检测GPU可用性，失败时自动回退CPU推理
 
 ### 传统Flask服务 (兼容)
 #### Build Image  

@@ -321,7 +321,7 @@ HTTP/1.1 503 Service Unavailable
 | THREADS | 2 | 每个进程的线程数 |
 | DEFAULT_MODEL | PP-OCRv5-Server | 默认使用的OCR模型 |
 | MODEL_POOL_SIZE | 1 | 模型实例池大小 |
-| MODEL_CONCURRENCY | 1 | 最大并发推理数 |
+| MODEL_CONCURRENCY | 8 | 最大并发推理数 |
 | MAX_UPLOAD_MB | 50 | 最大上传文件大小(MB) |
 | LOG_LEVEL | INFO | 日志等级：DEBUG/INFO/WARNING/ERROR |
 | USE_GPU | false | 是否使用GPU加速 |
@@ -332,8 +332,16 @@ HTTP/1.1 503 Service Unavailable
 # 构建镜像
 docker build -t onnxocr .
 
-# 运行容器
+# CPU版本运行
+docker-compose up -d
+
+# GPU版本运行（自动检测，失败时回退CPU）
+docker-compose -f docker-compose.gpu.yml up -d
+
+# 手动运行容器
 docker run -p 5005:5005 \
+  -e MODEL_CONCURRENCY=8 \
+  -e USE_GPU=true \
   -e MAX_UPLOAD_MB=100 \
   -e LOG_LEVEL=INFO \
   onnxocr
@@ -344,9 +352,9 @@ docker run -p 5005:5005 \
 ## 性能优化
 
 ### 推荐配置
-- **4C8G服务器**: `WORKERS=4, THREADS=2, MODEL_POOL_SIZE=2`
-- **启用GPU**: `USE_GPU=true` (需要GPU支持)
-- **高并发**: 适当增加`MODEL_CONCURRENCY`值
+- **4C8G服务器**: `WORKERS=4, THREADS=2, MODEL_CONCURRENCY=8`
+- **启用GPU**: `USE_GPU=true` (自动检测，失败时回退CPU)
+- **高并发**: 默认并发8，可根据硬件调整`MODEL_CONCURRENCY`值
 
 ### 性能指标
 - **单图处理**: ~200-500ms (CPU) / ~100-200ms (GPU)

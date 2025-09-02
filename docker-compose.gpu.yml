@@ -1,0 +1,35 @@
+services:
+  onnxocr-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: onnxocr-service-gpu
+    ports:
+      - "5005:5005"
+    restart: unless-stopped
+    volumes:
+      - ./models/ppocrv5-server:/app/onnxocr/models/ppocrv5-server  # 仅挂载需要下载的server版本
+      - ./cache_data:/cache_data       # 缓存数据持久化目录
+      - ./results:/app/results         # OCR结果输出目录
+    environment:
+      - CACHE_ENABLED=true
+      - CACHE_DIR=/cache_data
+      - CACHE_SIZE_LIMIT_GB=10
+      - LOG_LEVEL=INFO
+      - USE_GPU=true
+      - MODEL_CONCURRENCY=8
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    tmpfs:
+      - /tmp                   # 临时文件使用内存文件系统，提高性能
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

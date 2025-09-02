@@ -61,9 +61,10 @@ class EngineManager:
     
     def _get_model_kwargs(self, model_name: str) -> dict:
         """根据模型名称获取初始化参数"""
+        use_gpu = self._detect_gpu_availability()
         kwargs = {
             "use_angle_cls": True,
-            "use_gpu": settings.USE_GPU,
+            "use_gpu": use_gpu,
         }
         
         # 根据不同模型设置特定参数（确保传入的是具体的ONNX文件路径）
@@ -97,6 +98,27 @@ class EngineManager:
             })
         
         return kwargs
+    
+    def _detect_gpu_availability(self) -> bool:
+        """检测GPU可用性，自动回退到CPU"""
+        if not settings.USE_GPU:
+            return False
+        
+        try:
+            import onnxruntime as ort
+            providers = ort.get_available_providers()
+            gpu_available = any('CUDA' in p for p in providers)
+            
+            if gpu_available:
+                logger.info("GPU detected and available for inference")
+                return True
+            else:
+                logger.warning("GPU not detected, falling back to CPU inference")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"GPU detection failed: {e}, falling back to CPU inference")
+            return False
     
     async def get_model(self, model_name: Optional[str] = None) -> ONNXPaddleOcr:
         """获取模型实例，自动下载缺失的模型文件并支持重试机制"""

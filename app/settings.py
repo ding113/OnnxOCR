@@ -19,7 +19,7 @@ class Settings:
     # 模型配置
     DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "PP-OCRv5-Server")
     MODEL_POOL_SIZE: int = int(os.getenv("MODEL_POOL_SIZE", "4"))  # Increased for 128GB RAM
-    MODEL_CONCURRENCY: int = int(os.getenv("MODEL_CONCURRENCY", "8"))  # Increased for 96-core server
+    MODEL_CONCURRENCY: int = int(os.getenv("MODEL_CONCURRENCY", "8"))  # Default concurrency 8
     USE_GPU: bool = os.getenv("USE_GPU", "false").lower() == "true"
     WARMUP: bool = os.getenv("WARMUP", "true").lower() == "true"
     
